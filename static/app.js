@@ -1,5 +1,6 @@
 let library = {items: [], stats: {}};
 let activeCategory = "all";
+let activeTab = "all";
 let currentView = {type: "home"};
 let navStack = [];
 let players = [];
@@ -9,11 +10,10 @@ let moreMenuOpen = null;
 
 const app = document.querySelector("#app");
 const search = document.querySelector("#search");
-const typeFilter = document.querySelector("#typeFilter");
+const catTabs = document.querySelector("#catTabs");
 const scanBtn = document.querySelector("#scanBtn");
 const breadcrumb = document.querySelector("#breadcrumb");
 
-const ratingEditMode = {};
 let ratingsCache = {};
 let historyCache = {};
 
@@ -43,7 +43,6 @@ function getUserRating(item) { return item ? ratingsCache[item.id] || null : nul
 
 function setUserRating(itemId, score) {
   ratingsCache[itemId] = {score: Number(score), rated_at: new Date().toISOString()};
-  delete ratingEditMode[itemId];
   renderRoute(currentView);
   apiPutRating(itemId, score);
   showToast("评分已保存 " + Number(score).toFixed(1) + " / 10");
@@ -51,7 +50,6 @@ function setUserRating(itemId, score) {
 
 function clearUserRating(itemId) {
   delete ratingsCache[itemId];
-  delete ratingEditMode[itemId];
   renderRoute(currentView);
   apiDeleteRating(itemId);
   showToast("评分已清除");
@@ -93,18 +91,50 @@ function showToast(msg, duration) {
   }, duration || 2500);
 }
 
-function imgOrPlaceholder(item, kind="poster", shape="poster", label="") {
-  const src = artworkUrl(item, kind);
-  const title = label || titleOf(item);
-  const cls = shape ? "cover " + shape : "cover";
-  const ph = item?.type === "episode" ? "placeholder episode-placeholder" : "placeholder";
-  if (src) {
-    return '<div class="' + cls + '"><img src="' + src + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=&quot;' + ph + '&quot;>' + escapeHtml(title) + '</div>\'"></div>';
-  }
-  return '<div class="' + cls + '"><div class="' + ph + '">' + escapeHtml(title) + '</div></div>';
+/* ===== Category Tabs ===== */
+
+function renderCategoryTabs() {
+  const tabs = [
+    {key:"all", label:"全部"},
+    {key:"movie", label:"电影"},
+    {key:"show", label:"剧集"},
+    {key:"anime", label:"动漫"}
+  ];
+  catTabs.innerHTML = tabs.map(t =>
+    '<button class="cat-tab' + (activeTab === t.key ? ' active' : '') + '" onclick="setTab(\'' + t.key + '\')">' + t.label + '</button>'
+  ).join("");
 }
 
-/* ===== 星级评分 ===== */
+function setTab(key) {
+  activeTab = key;
+  activeCategory = "all";
+  if (key === "anime") {
+    activeCategory = "anime";
+  }
+  navStack = [];
+  renderHome();
+}
+
+/* ===== Highlight ===== */
+
+function highlightText(text, query) {
+  if (!query) return escapeHtml(text);
+  const escaped = escapeHtml(text);
+  const q = escapeHtml(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escaped.replace(new RegExp('(' + q + ')', 'gi'), '<mark>$1</mark>');
+}
+
+/* ===== Rating Badge (unified) ===== */
+
+function renderRatingBadge(score, opts) {
+  if (score == null) return '';
+  const num = Number(score);
+  if (isNaN(num) || num <= 0) return '';
+  const size = opts?.sm ? ' sm' : opts?.lg ? ' lg' : '';
+  return '<span class="rating-badge' + size + '">★ ' + num.toFixed(1) + '</span>';
+}
+
+/* ===== Star Rating (user input) ===== */
 
 function starRatingWidget(item) {
   const r = getUserRating(item);
@@ -121,25 +151,7 @@ function starRatingWidget(item) {
   return '<div class="star-rating">' + stars + label + (current ? '<button class="star-clear" onclick="clearUserRating(\'' + item.id + '\')" title="清除评分">✕</button>' : '') + '</div>';
 }
 
-/* ===== 高亮 ===== */
-
-function highlightText(text, query) {
-  if (!query) return escapeHtml(text);
-  const escaped = escapeHtml(text);
-  const q = escapeHtml(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return escaped.replace(new RegExp('(' + q + ')', 'gi'), '<mark>$1</mark>');
-}
-
-function metaBadges(item) {
-  const t = tmdb(item), bits = [];
-  if (item?.year) bits.push('<span class="badge">' + escapeHtml(item.year) + '</span>');
-  if (t.rating) bits.push('<span class="badge hot">TMDB ' + Number(t.rating).toFixed(1) + '</span>');
-  if (t.genres?.length) bits.push(...t.genres.slice(0, 3).map(g => '<span class="badge">' + escapeHtml(g) + '</span>'));
-  if (item?.type === "show") bits.push('<span class="badge">' + (item.season_count || 0) + ' 季</span><span class="badge">' + (item.episode_count || 0) + ' 集</span>');
-  return bits.join("");
-}
-
-/* ===== 面包屑 ===== */
+/* ===== Breadcrumb ===== */
 
 function renderBreadcrumb() {
   let html = '<span class="bc-item" onclick="goHome()">首页</span>';
@@ -160,7 +172,7 @@ function renderBreadcrumb() {
   breadcrumb.innerHTML = html;
 }
 
-/* ===== 路由 ===== */
+/* ===== Routing ===== */
 
 function findItem(id) { return library.items.find(i => i.id === id); }
 function findEpisode(episodeId) {
@@ -211,20 +223,19 @@ function goHome() {
   window.scrollTo({top:0, behavior:"smooth"});
 }
 
-/* ===== 首页 ===== */
-
-function setCategory(key) {
-  activeCategory = key;
-  navStack = [];
-  renderHome();
-}
+/* ===== Home ===== */
 
 function getFilteredItems() {
   const q = search.value.trim().toLowerCase();
-  const tf = typeFilter.value;
   return library.items.filter(item => {
+    if (activeTab === "anime") {
+      const ck = (item.category_key || "").toLowerCase();
+      const cn = (item.category_name || "").toLowerCase();
+      if (!ck.includes("anime") && !cn.includes("anime") && !ck.includes("动漫") && !cn.includes("动漫") && !ck.includes("动画") && !cn.includes("动画")) return false;
+    } else if (activeTab !== "all") {
+      if (item.type !== activeTab) return false;
+    }
     if (activeCategory !== "all" && item.category_key !== activeCategory) return false;
-    if (tf !== "all" && item.type !== tf) return false;
     if (!q) return true;
     let bag = (titleOf(item) + " " + (item.title || "") + " " + (item.year || "") + " " + (item.category_name || "")).toLowerCase();
     if (item.type === "movie") bag += " " + (item.filename || "") + " " + (item.folder || "");
@@ -243,25 +254,29 @@ function getContinueItems() {
     if (item) items.push({item, hist});
   }
   const q = search.value.trim().toLowerCase();
-  const tf = typeFilter.value;
   return items.filter(({item}) => {
-    if (activeCategory !== "all" && item.category_key !== activeCategory) return false;
-    if (tf !== "all" && item.type !== tf) return false;
+    if (activeTab === "anime") {
+      const ck = (item.category_key || "").toLowerCase();
+      const cn = (item.category_name || "").toLowerCase();
+      if (!ck.includes("anime") && !cn.includes("anime") && !ck.includes("动漫") && !cn.includes("动漫") && !ck.includes("动画") && !cn.includes("动画")) return false;
+    } else if (activeTab !== "all") {
+      if (item.type !== activeTab) return false;
+    }
     if (!q) return true;
     const bag = (titleOf(item) + " " + (item.year || "")).toLowerCase();
     return bag.includes(q);
   }).sort((a, b) => new Date(b.hist.played_at||0) - new Date(a.hist.played_at||0));
 }
 
-/* ===== Card Component ===== */
+/* ===== Card Overlay ===== */
 
 function renderCardOverlay(item) {
   const t = tmdb(item);
   const genres = (t.genres || []).slice(0, 2);
   let metaHtml = '';
-  if (item.year) metaHtml += '<span class="tag">' + escapeHtml(item.year) + '</span>';
-  if (t.rating) metaHtml += '<span class="rating">★ ' + Number(t.rating).toFixed(1) + '</span>';
-  if (genres.length) metaHtml += genres.map(g => '<span class="tag">' + escapeHtml(g) + '</span>').join('');
+  if (item.year) metaHtml += '<span class="rating-badge sm">' + escapeHtml(item.year) + '</span>';
+  if (t.rating) metaHtml += renderRatingBadge(t.rating, {sm:true});
+  if (genres.length) metaHtml += genres.map(g => '<span class="rating-badge sm" style="background:rgba(255,255,255,.08);color:var(--muted);font-weight:500">' + escapeHtml(g) + '</span>').join('');
   return '<div class="card-overlay"><div class="card-meta">' + metaHtml + '</div><div class="card-play-btn" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')">▶ 详情</div></div>';
 }
 
@@ -296,21 +311,36 @@ function renderContinueCard(entry) {
     + (artworkUrl(item, "poster")
       ? '<img src="' + artworkUrl(item, "poster") + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder\\\'>' + escapeHtml(title) + '</div>\'">'
       : '<div class="placeholder">' + escapeHtml(title) + '</div>')
-    + '<div class="card-overlay"><div class="card-meta"><span class="tag">' + escapeHtml(label) + '</span></div><div class="card-play-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(hist.path) + '\',' + histEntry + ')">▶ 播放</div></div>'
-    + (progressPct > 0 ? '<div class="card-progress"><div class="card-progress-bar' + (progressPct >= 100 ? ' ended' : '') + '" style="width:' + progressPct + '%"></div></div>' : '')
+    + '<div class="card-overlay"><div class="card-meta"><span class="rating-badge sm">' + escapeHtml(label) + '</span></div><div class="card-play-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(hist.path) + '\',' + histEntry + ')">▶ 播放</div></div>'
+    + (progressPct > 0 ? '<div class="card-progress"><div class="card-progress-bar" style="width:' + progressPct + '%"></div></div>' : '')
     + '</div>'
     + '<div class="card-body"><div class="continue-kicker">▶ 继续观看</div><h4 class="card-title">' + escapeHtml(title) + '</h4></div>'
     + '</article>';
 }
 
+/* ===== Home Render ===== */
+
+function showSkeleton() {
+  const card = '<div class="skeleton-card"><div class="skeleton-poster skeleton"></div><div class="skeleton-title skeleton"></div></div>';
+  app.innerHTML = '<section class="section"><div class="grid">' + card.repeat(12) + '</div></section>';
+}
+
 function renderHome() {
   currentView = {type:"home"};
+  renderCategoryTabs();
   renderBreadcrumb();
-  const items = getFilteredItems();
-  if (!items.length) {
+
+  if (!library.items.length) {
     app.innerHTML = '<section class="section"><div class="empty">暂无内容。请确认路径正确，然后点击"扫描"。</div></section>';
     return;
   }
+
+  const items = getFilteredItems();
+  if (!items.length) {
+    app.innerHTML = '<section class="section"><div class="empty">没有匹配的内容。试试其他分类或搜索词。</div></section>';
+    return;
+  }
+
   const hasQuery = search.value.trim().length > 0;
   const continueItems = hasQuery ? [] : getContinueItems();
   let html = '';
@@ -360,10 +390,12 @@ function openDetail(id) { navigateTo({type:"detail", id}); }
 function toggleSeason(showId, seasonNumber) {
   if (expandedSeason === showId + "|" + seasonNumber) { expandedSeason = null; renderRoute(currentView); return; }
   expandedSeason = showId + "|" + seasonNumber;
+  const el = document.querySelector('.season-card.season-expanded');
+  if (el) el.scrollIntoView({behavior:"smooth", block:"nearest"});
   renderRoute(currentView);
 }
 
-/* ===== 播放 ===== */
+/* ===== Playback ===== */
 
 async function playMedia(path, entry, player) {
   const route = {...currentView};
@@ -385,23 +417,25 @@ async function openFolder(folder) {
 }
 
 function renderPlayButtons(path, entryStr) {
-  if (!players || players.length <= 1) {
-    return '<button onclick="playMedia(\'' + escapeJs(path) + '\',' + entryStr + ')">播放</button>';
-  }
-  return players.map(p => '<button onclick="playMedia(\'' + escapeJs(path) + '\',' + entryStr + ',\'' + escapeJs(p.name) + '\')">' + escapeHtml(p.name) + '</button>').join("");
+  return '<button onclick="playMedia(\'' + escapeJs(path) + '\',' + entryStr + ')">▶ 播放</button>';
 }
 
-/* ===== 更多菜单 ===== */
+/* ===== More Menu ===== */
 
 function toggleMore(id) { moreMenuOpen = moreMenuOpen === id ? null : id; renderRoute(currentView); }
 
-function moreMenuHtml(item, actions) {
+function moreMenuHtml(item, extraActions) {
   const id = item.id;
   const open = moreMenuOpen === id;
+  let actions = '';
+  if (players && players.length > 1) {
+    actions += players.map(p => '<button onclick="playMedia(\'' + escapeJs(item.path) + '\',{media_id:\'' + item.id + '\'},\'' + escapeJs(p.name) + '\')">用 ' + escapeHtml(p.name) + ' 播放</button>').join("");
+  }
+  if (extraActions) actions += extraActions;
   return '<div class="more-wrap"><button class="ghost more-btn" onclick="toggleMore(\'' + id + '\')">···</button>' + (open ? '<div class="more-dropdown" onclick="toggleMore(\'' + id + '\')">' + actions + '</div>' : '') + '</div>';
 }
 
-/* ===== 详情页 ===== */
+/* ===== Detail Page ===== */
 
 function renderGenreTags(item) {
   const t = tmdb(item);
@@ -411,10 +445,10 @@ function renderGenreTags(item) {
 
 function renderPrimaryMeta(item) {
   const t = tmdb(item);
-  let html = '';
-  if (item.year) html += '<span class="year">' + escapeHtml(item.year) + '</span>';
-  if (t.rating) html += '<span class="rating-badge">★ ' + Number(t.rating).toFixed(1) + '</span>';
-  return html;
+  const parts = [];
+  if (item.year) parts.push('<span class="year">' + escapeHtml(item.year) + '</span>');
+  if (t.rating) parts.push(renderRatingBadge(t.rating));
+  return parts.join('<span class="sep">·</span>');
 }
 
 function detailHero(item, bodyHtml) {
@@ -433,6 +467,7 @@ function detailHero(item, bodyHtml) {
 
 function renderMovieDetail(item) {
   currentView = {type:"detail", id:item.id};
+  renderCategoryTabs();
   renderBreadcrumb();
   const meta = tmdb(item);
   const overview = meta.overview;
@@ -445,11 +480,12 @@ function renderMovieDetail(item) {
     + (origTitle ? '<div class="detail-subtitle">' + escapeHtml(origTitle) + '</div>' : '')
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
-    + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开全部</button></div>' : '')
+    + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
-    + renderPlayButtons(item.path, entry)
-    + (hist ? '<button class="cta-btn secondary" onclick="event.stopPropagation();playSavedHistory()">▶ 继续播放</button>' : '')
+    + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playSavedHistory()">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
+    + '<button class="cta-btn secondary" onclick="showToast(\'收藏功能开发中\')">☆ 收藏</button>'
+    + '<button class="cta-btn secondary" onclick="showToast(\'评论功能开发中\')">✎ 写评论</button>'
     + more
     + '</div>';
 
@@ -458,6 +494,7 @@ function renderMovieDetail(item) {
 
 function renderShowDetail(item) {
   currentView = {type:"detail", id:item.id};
+  renderCategoryTabs();
   renderBreadcrumb();
   const meta = tmdb(item);
   const overview = meta.overview;
@@ -471,11 +508,12 @@ function renderShowDetail(item) {
     + (origTitle ? '<div class="detail-subtitle">' + escapeHtml(origTitle) + '</div>' : '')
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
-    + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开全部</button></div>' : '')
+    + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playSavedHistory()">▶ 继续播放</button>' : '')
-    + (firstEntry ? renderPlayButtons(firstEp.ep.path, firstEntry) : '')
+    + (firstEntry ? '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(firstEp.ep.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '')
+    + '<button class="cta-btn secondary" onclick="showToast(\'收藏功能开发中\')">☆ 收藏</button>'
     + more
     + '</div>';
 
@@ -498,9 +536,15 @@ function findFirstEpisode(show) {
   return null;
 }
 
+/* ===== Season Card (enhanced) ===== */
+
 function renderSeasonCard(show, season, expanded) {
   const epWatched = season.episodes.filter(ep => historyCache[ep.id]).length;
   const progressPct = season.episode_count ? Math.round(epWatched / season.episode_count * 100) : 0;
+  const t = tmdb(show);
+  const seasonMeta = season.metadata?.tmdb || {};
+  const seasonRating = seasonMeta.vote_average || t.vote_average || "";
+  const seasonYear = seasonMeta.air_date ? seasonMeta.air_date.slice(0,4) : season.year || show.year || "";
   return '<article class="card season-card' + (expanded ? ' season-expanded' : '') + '" onclick="toggleSeason(\'' + show.id + '\',' + season.season_number + ')">'
     + '<div class="card-poster">'
     + (artworkUrl(season, "poster")
@@ -508,8 +552,14 @@ function renderSeasonCard(show, season, expanded) {
       : '<div class="placeholder">' + escapeHtml(titleOf(show)) + '</div>')
     + '</div>'
     + '<div class="card-body"><h4 class="card-title">' + escapeHtml(season.title) + '</h4>'
-    + '<div class="season-meta">' + (season.episode_count || 0) + ' 集</div>'
-    + (progressPct > 0 ? '<div class="season-progress"><div class="season-progress-bar" style="width:' + progressPct + '%"></div></div>' : '')
+    + '<div class="season-meta">'
+    + (seasonYear ? '<span class="year">' + seasonYear + '</span>' : '')
+    + (season.episode_count ? '<span>' + season.episode_count + ' 集</span>' : '')
+    + (seasonRating ? renderRatingBadge(seasonRating, {sm:true}) : '')
+    + '</div>'
+    + (progressPct > 0
+      ? '<div class="season-progress"><div class="season-progress-bar" style="width:' + progressPct + '%"></div></div><div class="season-progress-text">已看 ' + epWatched + '/' + (season.episode_count || 0) + '</div>'
+      : '')
     + '</div></article>';
 }
 
@@ -521,10 +571,11 @@ function renderInlineEpisodes(show, season) {
     + '</div></div>';
 }
 
-/* ===== 季节详情 ===== */
+/* ===== Season Detail ===== */
 
 function renderSeasonDetail(show, season) {
   currentView = {type:"season", showId:show.id, seasonNumber:season.season_number};
+  renderCategoryTabs();
   renderBreadcrumb();
   const firstEp = (season.episodes || [])[0];
   const firstEntry = firstEp ? episodeEntry(show, season, firstEp, season.title + " · " + firstEp.title) : "";
@@ -532,11 +583,11 @@ function renderSeasonDetail(show, season) {
   const overview = season?.metadata?.overview || tmdb(show).overview || "";
 
   const body = '<h1>' + escapeHtml(season.title) + '</h1>'
-    + '<div class="detail-primary-meta"><span class="year">' + (show.year || '') + '</span></div>'
+    + '<div class="detail-primary-meta">' + renderPrimaryMeta(show) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(show) + '</div>'
-    + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开全部</button></div>' : '')
+    + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
     + '<div class="detail-actions">'
-    + (firstEp ? renderPlayButtons(firstEp.path, firstEntry) : '<button disabled>无剧集</button>')
+    + (firstEp ? '<button class="cta-btn" onclick="playMedia(\'' + escapeJs(firstEp.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '<button class="cta-btn" disabled>无剧集</button>')
     + '</div>';
 
   app.innerHTML = detailHero(seasonHero, body)
@@ -547,11 +598,13 @@ function renderSeasonDetail(show, season) {
     + '</div></section>';
 }
 
-/* ===== 剧集（紧凑行布局） ===== */
+/* ===== Episode Entry ===== */
 
 function episodeEntry(show, season, ep, label) {
   return "{media_id:'" + show.id + "',episode_id:'" + ep.id + "',type:'episode',path:'" + escapeJs(ep.path) + "',title:'" + escapeJs(ep.title) + "',show_title:'" + escapeJs(titleOf(show)) + "',season_number:" + season.season_number + ",episode_number:" + (ep.episode_number || 0) + ",label:'" + escapeJs(label) + "',short_label:'S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0") + "'}";
 }
+
+/* ===== Episode Card (compact row) ===== */
 
 function renderEpisodeCard(show, season, ep) {
   const hist = getItemHistory(show);
@@ -560,22 +613,27 @@ function renderEpisodeCard(show, season, ep) {
   const entry = episodeEntry(show, season, ep, label);
   const epHist = historyCache[ep.id];
   const thumbSrc = artworkUrl(ep, "thumb") || artworkUrl(ep, "poster");
-  const hasOverview = ep.overview || ep.filename;
+  const epNum = "S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0");
 
   return '<div class="episode-row' + (active ? ' active-episode' : '') + '" onclick="playMedia(\'' + escapeJs(ep.path) + '\',' + entry + ')">'
     + '<div class="episode-row-thumb">'
-    + (thumbSrc ? '<img src="' + thumbSrc + '" loading="lazy">' : '<div class="placeholder episode-placeholder">' + escapeHtml(ep.episode_number || "") + '</div>')
-    + '<div class="play-indicator"><span>▶</span></div>'
+    + (thumbSrc
+      ? '<img src="' + thumbSrc + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder episode-placeholder\\\'>' + escapeHtml(epNum) + '</div>\'">'
+      : '<div class="placeholder episode-placeholder">' + escapeHtml(epNum) + '</div>')
+    + '<div class="play-badge"><span>▶</span></div>'
     + '</div>'
+
     + '<div class="episode-row-body">'
-    + '<div class="episode-row-title">' + escapeHtml(ep.title || ep.filename) + '</div>'
-    + '<div class="episode-row-meta">S' + String(season.season_number).padStart(2,"0") + 'E' + String(ep.episode_number || 0).padStart(2,"0") + (epHist ? ' · 已观看' : '') + '</div>'
-    + (hasOverview ? '<div class="episode-row-overview">' + escapeHtml(ep.overview || ep.filename) + '</div>' : '')
-    + '<div class="episode-row-actions" onclick="event.stopPropagation()">'
-    + renderPlayButtons(ep.path, entry)
-    + '<button class="ghost" onclick="openFolder(\'' + escapeJs(ep.folder) + '\')">文件夹</button>'
+    + '<div class="episode-row-top">'
+    + '<span class="episode-row-num' + (active ? ' active-num' : '') + '">' + epNum + '</span>'
+    + '<span class="episode-row-title">' + escapeHtml(ep.title || ep.filename) + '</span>'
     + '</div>'
-    + '</div></div>';
+    + '<div class="episode-row-overview">' + escapeHtml(ep.overview || ep.filename || "") + '</div>'
+    + (epHist ? '<div class="episode-row-progress"><div class="bar" style="width:100%"></div></div>' : '')
+    + '</div>'
+
+    + '<div class="episode-row-play"><button onclick="event.stopPropagation();playMedia(\'' + escapeJs(ep.path) + '\',' + entry + ')" title="播放">▶</button></div>'
+    + '</div>';
 }
 
 function playFirstEpisode(showId, seasonNumber) {
@@ -592,14 +650,15 @@ function toggleOverview() {
   const btn = document.querySelector(".expand-btn");
   if (!wrap || !btn) return;
   const expanded = wrap.classList.toggle("expanded");
-  btn.textContent = expanded ? "收起" : "展开全部";
+  btn.textContent = expanded ? "收起" : "展开";
 }
 
-/* ===== 设置 ===== */
+/* ===== Settings ===== */
 
 function renderSettings() {
   navStack = [];
   currentView = {type:"home"};
+  renderCategoryTabs();
   renderBreadcrumb();
   const catKeys = Object.keys(categoriesConfig);
   const rows = catKeys.map((key, i) => '<div class="settings-cat-row"><input class="sc-folder" value="' + escapeHtml(key) + '" placeholder="文件夹名"><input class="sc-name" value="' + escapeHtml(categoriesConfig[key].name) + '" placeholder="显示名"><select class="sc-type"><option value="movie"' + (categoriesConfig[key].type === "movie" ? " selected" : "") + '>电影</option><option value="show"' + (categoriesConfig[key].type === "show" ? " selected" : "") + '>剧集</option></select><button class="ghost" onclick="this.closest(\'.settings-cat-row\').remove()">✕</button></div>').join("");
@@ -630,6 +689,7 @@ async function saveSettings() {
 }
 
 async function loadLibrary() {
+  showSkeleton();
   const [libRes, ratingsRes, historyRes, playersRes, configRes] = await Promise.all([
     fetch("/api/library"), fetch("/api/ratings"), fetch("/api/history"),
     fetch("/api/players"), fetch("/api/config")
@@ -644,13 +704,12 @@ async function loadLibrary() {
 
 scanBtn.onclick = async () => {
   const bar = document.getElementById("scanBar");
-  scanBtn.textContent = "扫描";
   scanBtn.disabled = true;
   if (bar) bar.classList.add("active");
+  showSkeleton();
   const res = await fetch("/api/scan", {method:"POST"});
   library = await res.json();
   scanBtn.disabled = false;
-  scanBtn.textContent = "扫描";
   if (bar) bar.classList.remove("active");
   if (library.error) { showToast(library.error, 4000); return; }
   const s = library.stats;
@@ -664,6 +723,5 @@ document.addEventListener("click", (e) => {
 });
 
 search.addEventListener("input", () => { navStack = []; renderHome(); });
-typeFilter.addEventListener("change", () => { navStack = []; renderHome(); });
 window.addEventListener("keydown", e => { if (e.key === "Escape" && currentView.type !== "home") goBackSmart(); });
 loadLibrary();

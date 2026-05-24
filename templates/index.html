@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <title>MovieWall</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;950&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -15,8 +18,8 @@
       <nav id="breadcrumb" class="breadcrumb"></nav>
     </div>
     <div class="tools">
-      <input id="search" placeholder="搜索">
-      <select id="typeFilter"><option value="all">全部</option><option value="movie">电影</option><option value="show">剧集</option></select>
+      <input id="search" placeholder="搜索电影、剧集...">
+      <nav id="catTabs" class="cat-tabs"></nav>
       <button id="scanBtn" title="扫描">扫描</button>
       <button id="settingsBtn" onclick="renderSettings()" title="设置">⚙</button>
     </div>
