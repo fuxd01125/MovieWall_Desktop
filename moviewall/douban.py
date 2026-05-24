@@ -124,7 +124,7 @@ def get_douban_metadata(title_cn, title_en, year, media_type):
     search_key = f"douban:{urllib.parse.quote(title_cn)}:{year or ''}"
     cached = cache.get(search_key)
 
-    if cached and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
+    if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
         return cached.get("data")
 
     try:
@@ -137,13 +137,14 @@ def get_douban_metadata(title_cn, title_en, year, media_type):
     return result
 
 
+
 def get_douban_metadata_by_id(douban_id):
     """Fetch Douban metadata by manually provided ID, with caching."""
     cache = read_json(METADATA_CACHE_FILE, {})
     cache_key = f"douban_id:{douban_id}"
     cached = cache.get(cache_key)
     cfg = load_config()
-    if cached and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
+    if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
         return cached.get("data")
 
     # For a known ID, search by that ID on douban
