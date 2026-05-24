@@ -8,36 +8,40 @@ const tabs = document.querySelector("#tabs");
 const search = document.querySelector("#search");
 const scanBtn = document.querySelector("#scanBtn");
 
-const HISTORY_KEY = "moviewall_play_history_v12";
-const RATING_KEY = "moviewall_user_ratings_v13";
 const ratingEditMode = {};
 
-function loadJson(key) { try { return JSON.parse(localStorage.getItem(key) || "{}"); } catch { return {}; } }
-function saveJson(key, data) { localStorage.setItem(key, JSON.stringify(data)); }
+let ratingsCache = {};
+let historyCache = {};
 
-function loadHistory() { return loadJson(HISTORY_KEY); }
-function saveHistory(data) { saveJson(HISTORY_KEY, data); }
-function loadRatings() { return loadJson(RATING_KEY); }
-function saveRatings(data) { saveJson(RATING_KEY, data); }
+function loadHistory() { return historyCache; }
+function loadRatings() { return ratingsCache; }
 
-function recordPlay(entry) {
-  const h = loadHistory();
-  const item = {...entry, played_at: new Date().toISOString()};
-  h[item.media_id] = item;
-  h.__last = item;
-  saveHistory(h);
+async function apiPutRating(mediaId, score) {
+  await fetch("/api/ratings", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({media_id:mediaId, score})});
+}
+async function apiDeleteRating(mediaId) {
+  await fetch(`/api/ratings/${mediaId}`, {method:"DELETE"});
+}
+async function apiPutHistory(entry) {
+  await fetch("/api/history", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(entry)});
 }
 
-function getLastHistory() { return loadHistory().__last || null; }
-function getItemHistory(item) { return item ? loadHistory()[item.id] : null; }
-function getUserRating(item) { return item ? loadRatings()[item.id] || null : null; }
+function recordPlay(entry) {
+  const item = {...entry, played_at: new Date().toISOString()};
+  historyCache[item.media_id] = item;
+  historyCache.__last = item;
+  apiPutHistory(item);
+}
+
+function getLastHistory() { return historyCache.__last || null; }
+function getItemHistory(item) { return item ? historyCache[item.id] : null; }
+function getUserRating(item) { return item ? ratingsCache[item.id] || null : null; }
 
 function setUserRating(itemId, score) {
-  const ratings = loadRatings();
-  ratings[itemId] = {score: Number(score), rated_at: new Date().toISOString()};
-  saveRatings(ratings);
+  ratingsCache[itemId] = {score: Number(score), rated_at: new Date().toISOString()};
   delete ratingEditMode[itemId];
   renderRoute(currentView);
+  apiPutRating(itemId, score);
 }
 
 function openRatingEditor(itemId) {
@@ -51,11 +55,10 @@ function cancelRatingEditor(itemId) {
 }
 
 function clearUserRating(itemId) {
-  const ratings = loadRatings();
-  delete ratings[itemId];
-  saveRatings(ratings);
+  delete ratingsCache[itemId];
   delete ratingEditMode[itemId];
   renderRoute(currentView);
+  apiDeleteRating(itemId);
 }
 
 function escapeHtml(s) {
@@ -426,8 +429,14 @@ function toggleOverview() {
 }
 
 async function loadLibrary() {
-  const res = await fetch("/api/library");
-  library = await res.json();
+  const [libRes, ratingsRes, historyRes] = await Promise.all([
+    fetch("/api/library"),
+    fetch("/api/ratings"),
+    fetch("/api/history")
+  ]);
+  library = await libRes.json();
+  ratingsCache = await ratingsRes.json();
+  historyCache = await historyRes.json();
   renderHome();
 }
 

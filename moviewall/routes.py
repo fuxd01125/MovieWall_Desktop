@@ -1,10 +1,11 @@
 import os
 import subprocess
+import time
 from pathlib import Path
 
 from flask import abort, jsonify, render_template, request, send_file
 
-from moviewall.config import load_config, load_library
+from moviewall.config import load_config, load_library, read_ratings, write_ratings, read_history, write_history
 from moviewall.scanner import scan_library
 
 
@@ -106,3 +107,50 @@ def register_routes(app):
             subprocess.Popen(["explorer", str(Path(folder).resolve())])
             return jsonify({"ok": True})
         return jsonify({"ok": False, "error": "仅支持 Windows Explorer"}), 400
+
+    @app.route("/api/ratings", methods=["GET"])
+    def api_get_ratings():
+        return jsonify(read_ratings())
+
+    @app.route("/api/ratings", methods=["PUT"])
+    def api_set_rating():
+        data = request.get_json(force=True)
+        media_id = data.get("media_id")
+        score = data.get("score")
+        if not media_id or score is None:
+            return jsonify({"ok": False, "error": "缺少 media_id 或 score"}), 400
+        ratings = read_ratings()
+        ratings[media_id] = {"score": float(score), "rated_at": time.time()}
+        write_ratings(ratings)
+        return jsonify({"ok": True})
+
+    @app.route("/api/ratings/<media_id>", methods=["DELETE"])
+    def api_clear_rating(media_id):
+        ratings = read_ratings()
+        ratings.pop(media_id, None)
+        write_ratings(ratings)
+        return jsonify({"ok": True})
+
+    @app.route("/api/history", methods=["GET"])
+    def api_get_history():
+        return jsonify(read_history())
+
+    @app.route("/api/history", methods=["PUT"])
+    def api_record_history():
+        data = request.get_json(force=True)
+        media_id = data.get("media_id")
+        if not media_id:
+            return jsonify({"ok": False, "error": "缺少 media_id"}), 400
+        history = read_history()
+        entry = {**data, "played_at": data.get("played_at") or time.time()}
+        history[media_id] = entry
+        history["__last"] = entry
+        write_history(history)
+        return jsonify({"ok": True})
+
+    @app.route("/api/history/<media_id>", methods=["DELETE"])
+    def api_clear_history(media_id):
+        history = read_history()
+        history.pop(media_id, None)
+        write_history(history)
+        return jsonify({"ok": True})

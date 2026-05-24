@@ -14,6 +14,8 @@ CONFIG_FILE = APP_DIR / "config.json"
 LIBRARY_FILE = APP_DIR / "library.json"
 METADATA_CACHE_FILE = APP_DIR / "metadata_cache.json"
 LOCAL_METADATA_FILE = APP_DIR / "local_metadata.json"
+RATINGS_FILE = APP_DIR / "ratings.json"
+HISTORY_FILE = APP_DIR / "history.json"
 
 
 def read_json(path: Path, default):
@@ -39,3 +41,19 @@ def load_library():
 
 def save_library(data):
     write_json(LIBRARY_FILE, data)
+
+
+def read_ratings():
+    return read_json(RATINGS_FILE, {})
+
+
+def write_ratings(data):
+    write_json(RATINGS_FILE, data)
+
+
+def read_history():
+    return read_json(HISTORY_FILE, {})
+
+
+def write_history(data):
+    write_json(HISTORY_FILE, data)
