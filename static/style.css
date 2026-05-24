@@ -87,13 +87,16 @@ button, select{
   background:var(--accent)
 }
 select{
-  appearance:auto;
   padding:12px 10px;
   font-size:14px;
   font-weight:700;
   color:var(--text);
   background:rgba(255,255,255,.1);
   border:1px solid var(--line)
+}
+select option{
+  color:#111;
+  background:#fff
 }
 
 button.ghost{
@@ -587,8 +590,7 @@ main{
 }
 
 mark{
-  background:rgba(245,196,81,.45);
-  color:inherit;
-  border-radius:4px;
-  padding:0 2px
+  background:transparent;
+  color:var(--accent);
+  font-weight:950
 }

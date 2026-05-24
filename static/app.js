@@ -236,7 +236,8 @@ function renderHome() {
     app.innerHTML = `<section class="section"><div class="empty">暂无内容。请确认路径正确，然后点击“扫描”。</div></section>`;
     return;
   }
-  const last = getLastHistory();
+  const hasQuery = search.value.trim().length > 0;
+  const last = hasQuery ? null : getLastHistory();
   const continueCard = last ? renderContinueCard(last) : "";
   if (activeCategory === "all") {
     app.innerHTML = `<section class="section"><div class="section-head"><h2>全部</h2><small>${items.length}${last ? " + 继续观看" : ""}</small></div><div class="home-strip">${continueCard}${items.map(renderHomeCard).join("")}</div></section>`;
