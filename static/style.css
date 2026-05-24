@@ -521,30 +521,57 @@ main{
 /* ===== Star Rating ===== */
 
 .star-rating{
-  display:inline-flex;align-items:center;gap:4px;
+  display:inline-flex;align-items:center;gap:8px;
   margin-top:14px;
-  padding:8px 12px;border-radius:var(--radius);
+  padding:10px 14px;border-radius:10px;
   background:rgba(255,255,255,.04);
   border:1px solid var(--line)
 }
+.star-label{
+  font-size:12px;font-weight:600;color:var(--muted);
+  white-space:nowrap;flex-shrink:0
+}
+.star-row{
+  display:inline-flex;align-items:center;gap:2px
+}
 .star{
-  font-size:22px;cursor:pointer;
-  transition:transform .15s,color .15s;line-height:1
+  font-size:20px;cursor:pointer;
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1),color .15s;
+  line-height:1;
+  position:relative
 }
-.star:hover{transform:scale(1.2)}
-.star-full{color:var(--accent)}
-.star-half{color:var(--accent);position:relative}
-.star-half:after{content:"☆";position:absolute;left:0;top:0;color:var(--muted);clip-path:inset(0 50% 0 0)}
-.star-empty{color:var(--muted)}
-.star-score{font-size:16px;font-weight:800;color:var(--accent);margin-left:6px;min-width:28px}
-.star-hint{font-size:12px;color:var(--muted);margin-left:6px}
-.star-clear{
-  margin-left:6px;padding:2px 8px;
-  border-radius:999px;border:0;
+.star:hover{transform:scale(1.35)}
+.star-full{color:var(--accent);text-shadow:0 0 6px rgba(245,197,24,.3)}
+.star-half{
+  color:var(--accent);position:relative;
+  text-shadow:0 0 6px rgba(245,197,24,.3)
+}
+.star-half:after{
+  content:"☆";position:absolute;left:0;top:0;
+  color:var(--muted);clip-path:inset(0 50% 0 0);
+  text-shadow:none
+}
+.star-empty{color:rgba(255,255,255,.15)}
+.star-empty:hover{color:rgba(255,255,255,.3)}
+.star-score{
+  font-size:15px;font-weight:800;color:var(--accent);
+  font-variant-numeric:tabular-nums;min-width:32px;
+  letter-spacing:-.3px
+}
+.star-hint{
   font-size:12px;color:var(--muted);
-  background:rgba(255,255,255,.08);cursor:pointer
+  cursor:pointer;transition:color .15s
 }
-.star-clear:hover{color:var(--text);background:rgba(255,255,255,.15)}
+.star-hint:hover{color:var(--text)}
+.star-clear{
+  margin-left:4px;padding:3px 8px;
+  border-radius:999px;border:0;
+  font-size:11px;font-weight:600;
+  color:var(--muted);
+  background:rgba(255,255,255,.06);cursor:pointer;
+  transition:background .15s,color .15s
+}
+.star-clear:hover{color:#e74c3c;background:rgba(231,76,60,.15)}
 
 /* ===== Empty State ===== */
 

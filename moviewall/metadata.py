@@ -44,6 +44,29 @@ def get_tmdb_metadata(title, year, media_type):
     return data
 
 
+def attach_season_metadata(item, tmdb_id, lang):
+    if item.get("type") != "show":
+        return
+    season_map = {}
+    for season in item.get("seasons", []):
+        sn = season.get("season_number")
+        if not sn:
+            continue
+        data = tmdb_request(f"tv/{tmdb_id}/season/{sn}", {"language": lang})
+        if data:
+            rating = data.get("vote_average")
+            air_date = data.get("air_date", "")
+            overview = data.get("overview", "")
+            if rating:
+                season_map[str(sn)] = {
+                    "rating": rating,
+                    "air_date": air_date,
+                    "overview": overview,
+                }
+    if season_map:
+        item["_season_meta"] = season_map
+
+
 def attach_metadata(item):
     media_type = "movie" if item.get("type") == "movie" else "tv"
     tmdb = get_tmdb_metadata(item.get("title", ""), item.get("year", ""), media_type)
@@ -52,5 +75,9 @@ def attach_metadata(item):
         meta["tmdb"] = tmdb
         if tmdb.get("title"):
             item["display_title"] = tmdb["title"]
+        if item.get("type") == "show" and tmdb.get("tmdb_id"):
+            cfg = load_config()
+            lang = cfg.get("tmdb_language", "zh-CN") or "zh-CN"
+            attach_season_metadata(item, tmdb["tmdb_id"], lang)
     item["metadata"] = meta
     return item

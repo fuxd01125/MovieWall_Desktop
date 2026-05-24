@@ -139,12 +139,23 @@ function starRatingWidget(item) {
   const halfStar = (current % 2) >= 1 ? 1 : 0;
   let stars = "";
   for (let i = 1; i <= 5; i++) {
-    if (i <= fullStars) stars += '<span class="star star-full" onclick="setUserRating(\'' + item.id + '\',' + (i * 2) + ')">★</span>';
-    else if (i === fullStars + 1 && halfStar) stars += '<span class="star star-half" onclick="setUserRating(\'' + item.id + '\',' + (i * 2) + ')">★</span>';
-    else stars += '<span class="star star-empty" onclick="setUserRating(\'' + item.id + '\',' + (i * 2) + ')">☆</span>';
+    const val = i * 2;
+    let cls = "star star-empty";
+    if (i <= fullStars) cls = "star star-full";
+    else if (i === fullStars + 1 && halfStar) cls = "star star-half";
+    stars += '<span class="' + cls + '" onclick="setUserRating(\'' + item.id + '\',' + val + ')">'
+      + (i <= fullStars || (i === fullStars + 1 && halfStar) ? '★' : '☆')
+      + '</span>';
   }
-  const label = current ? '<span class="star-score">' + current.toFixed(1) + '</span>' : '<span class="star-hint">评分</span>';
-  return '<div class="star-rating">' + stars + label + (current ? '<button class="star-clear" onclick="clearUserRating(\'' + item.id + '\')" title="清除评分">✕</button>' : '') + '</div>';
+  const label = current
+    ? '<span class="star-score">' + current.toFixed(1) + '</span>'
+    : '<span class="star-hint">我来评分</span>';
+  return '<div class="star-rating">'
+    + '<span class="star-label">我的评分</span>'
+    + '<div class="star-row">' + stars + '</div>'
+    + label
+    + (current ? '<button class="star-clear" onclick="clearUserRating(\'' + item.id + '\')" title="清除评分">✕</button>' : '')
+    + '</div>';
 }
 
 /* ===== Breadcrumb ===== */
@@ -448,6 +459,9 @@ function renderPrimaryMeta(item) {
   const parts = [];
   if (item.year) parts.push('<span class="year">' + escapeHtml(item.year) + '</span>');
   if (t.rating) parts.push(renderRatingBadge(t.rating));
+  if (item.type === "show") {
+    parts.push('<span class="year">' + (item.season_count || 0) + ' 季 · ' + (item.episode_count || 0) + ' 集</span>');
+  }
   return parts.join('<span class="sep">·</span>');
 }
 
@@ -484,8 +498,8 @@ function renderMovieDetail(item) {
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
-    + '<button class="cta-btn secondary" onclick="showToast(\'收藏功能开发中\')">☆ 收藏</button>'
-    + '<button class="cta-btn secondary" onclick="showToast(\'评论功能开发中\')">✎ 写评论</button>'
+    + '<button class="cta-btn secondary" onclick="showToast(\'收藏功能开发中\')">♡ 收藏</button>'
+    + '<button class="cta-btn secondary" onclick="showToast(\'评论功能开发中\')">✎ 评论</button>'
     + more
     + '</div>';
 
@@ -542,9 +556,10 @@ function renderSeasonCard(show, season, expanded) {
   const epWatched = season.episodes.filter(ep => historyCache[ep.id]).length;
   const progressPct = season.episode_count ? Math.round(epWatched / season.episode_count * 100) : 0;
   const t = tmdb(show);
-  const seasonMeta = season.metadata?.tmdb || {};
-  const seasonRating = seasonMeta.vote_average || t.vote_average || "";
-  const seasonYear = seasonMeta.air_date ? seasonMeta.air_date.slice(0,4) : season.year || show.year || "";
+  const sm = show._season_meta || {};
+  const sMeta = sm[String(season.season_number)] || {};
+  const seasonRating = sMeta.rating || t.vote_average || "";
+  const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
   return '<article class="card season-card' + (expanded ? ' season-expanded' : '') + '" onclick="toggleSeason(\'' + show.id + '\',' + season.season_number + ')">'
     + '<div class="card-poster">'
     + (artworkUrl(season, "poster")
