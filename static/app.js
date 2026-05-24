@@ -396,9 +396,11 @@ function openDetail(id) { navigateTo({type:"detail", id}); }
 function toggleSeason(showId, seasonNumber) {
   if (expandedSeason === showId + "|" + seasonNumber) { expandedSeason = null; renderRoute(currentView); return; }
   expandedSeason = showId + "|" + seasonNumber;
-  const el = document.querySelector('.season-card.season-expanded');
-  if (el) el.scrollIntoView({behavior:"smooth", block:"nearest"});
   renderRoute(currentView);
+  requestAnimationFrame(() => {
+    const el = document.querySelector('.season-expanded-wrap');
+    if (el) el.scrollIntoView({behavior:"smooth", block:"start"});
+  });
 }
 
 /* ===== Playback ===== */
@@ -532,14 +534,28 @@ function renderShowDetail(item) {
     + '</div>';
 
   const isExpanded = (snum) => expandedSeason === item.id + "|" + snum;
-  app.innerHTML = detailHero(item, body)
-    + '<section class="section">'
-    + '<div class="section-header"><h2>季</h2><small>' + (item.season_count || 0) + ' 季</small></div>'
+  const seasonCards = (item.seasons || []).map((s, i) => renderSeasonCard(item, s, isExpanded(s.season_number)));
+
+  let seasonHtml = '<section class="section">'
+    + '<div class="section-header"><h2>季</h2><small>' + (item.season_count || 0) + ' 季 · ' + (item.episode_count || 0) + ' 集</small></div>'
     + '<div class="season-wall">'
-    + (item.seasons || []).map(s => renderSeasonCard(item, s, isExpanded(s.season_number))).join("")
-    + '</div>'
-    + (item.seasons || []).filter(s => isExpanded(s.season_number)).map(s => renderInlineEpisodes(item, s)).join("")
-    + '</section>';
+    + seasonCards.join("")
+    + '</div>';
+
+  const expandedSeasonData = (item.seasons || []).filter(s => isExpanded(s.season_number));
+  if (expandedSeasonData.length > 0) {
+    const es = expandedSeasonData[0];
+    seasonHtml += '<div class="season-expanded-wrap">'
+      + '<div class="season-expanded-header">'
+      + '<span>' + escapeHtml(es.title) + ' · 剧集列表</span>'
+      + '<button class="ghost" onclick="toggleSeason(\'' + item.id + '\',' + es.season_number + ')" style="font-size:12px">收起</button>'
+      + '</div>'
+      + renderInlineEpisodes(item, es)
+      + '</div>';
+  }
+
+  seasonHtml += '</section>';
+  app.innerHTML = detailHero(item, body) + seasonHtml;
 }
 
 function findFirstEpisode(show) {
@@ -580,7 +596,6 @@ function renderSeasonCard(show, season, expanded) {
 
 function renderInlineEpisodes(show, season) {
   return '<div class="inline-episodes">'
-    + '<div class="inline-episodes-head">' + escapeHtml(season.title) + ' · 剧集列表</div>'
     + '<div class="episode-list">'
     + (season.episodes || []).map(ep => renderEpisodeCard(show, season, ep)).join("")
     + '</div></div>';
@@ -596,13 +611,24 @@ function renderSeasonDetail(show, season) {
   const firstEntry = firstEp ? episodeEntry(show, season, firstEp, season.title + " · " + firstEp.title) : "";
   const seasonHero = {...season, display_title:titleOf(show) + " · " + season.title, title:titleOf(show) + " · " + season.title, metadata:show.metadata};
   const overview = season?.metadata?.overview || tmdb(show).overview || "";
+  const sm = show._season_meta || {};
+  const sMeta = sm[String(season.season_number)] || {};
+  const seasonRating = sMeta.rating || "";
+  const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
+  const seasonOverview = sMeta.overview || overview;
+
+  const metaParts = [];
+  if (seasonYear) metaParts.push('<span class="year">' + escapeHtml(seasonYear) + '</span>');
+  if (seasonRating) metaParts.push(renderRatingBadge(seasonRating));
+  metaParts.push('<span class="year">' + (season.episode_count || 0) + ' 集</span>');
 
   const body = '<h1>' + escapeHtml(season.title) + '</h1>'
-    + '<div class="detail-primary-meta">' + renderPrimaryMeta(show) + '</div>'
+    + '<div class="detail-primary-meta">' + metaParts.join('<span class="sep">·</span>') + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(show) + '</div>'
-    + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
+    + (seasonOverview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(seasonOverview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
     + '<div class="detail-actions">'
     + (firstEp ? '<button class="cta-btn" onclick="playMedia(\'' + escapeJs(firstEp.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '<button class="cta-btn" disabled>无剧集</button>')
+    + '<button class="cta-btn secondary" onclick="event.stopPropagation();navigateTo({type:\'detail\', id:\'' + show.id + '\'})">← 返回剧集</button>'
     + '</div>';
 
   app.innerHTML = detailHero(seasonHero, body)
