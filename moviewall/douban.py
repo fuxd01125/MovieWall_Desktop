@@ -62,55 +62,77 @@ def _parse_search_data(html):
         return []
 
 
+def _extract_year_from_text(text):
+    """Extract year from text like '葬送的芙莉莲 (2023)' or '夜访吸血鬼 (1994)'."""
+    m = re.search(r'(?:\(|（)(19|20)\d{2}(?:\)|）)', str(text))
+    return m.group(1) if m else ""
+
+
 def search_and_fetch(title_cn, title_en, year):
     """Search Douban by title, extract rating and id from search results JSON."""
     opener = _get_opener()
     candidates = [title_cn, title_en] if title_en else [title_cn]
 
+    # Also try stripped variant (removing colons and parentheticals)
+    extras = []
+    for c in candidates:
+        stripped = re.sub(r'[：:（(][^)）]*[)）]', '', c).strip()
+        if stripped and stripped != c:
+            extras.append(stripped)
+    candidates.extend(extras)
+
+    cats_to_try = ["1002", ""]  # movie/TV cat, then all
+
     for t in candidates:
         if not t:
             continue
-        params = {"search_text": t, "cat": "1002"}
-        url = DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode(params)
-        html = _request(url, opener)
-        if not html:
-            continue
+        for cat in cats_to_try:
+            params = {"search_text": t}
+            if cat:
+                params["cat"] = cat
+            url = DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode(params)
+            html = _request(url, opener)
+            if not html:
+                continue
 
-        items = _parse_search_data(html)
-        if not items:
-            continue
+            items = _parse_search_data(html)
+            if not items:
+                continue
 
-        best = None
-        for item in items:
-            item_year = item.get("year", "")
-            if year and item_year and str(year) in str(item_year):
-                best = item
-                break
+            # First pass: try to match by year
+            best = None
+            for item in items:
+                item_year = item.get("year", "") or _extract_year_from_text(item.get("title", ""))
+                if year and item_year and str(year) in str(item_year):
+                    best = item
+                    break
 
-        if best is None:
-            best = items[0]
+            # Second pass: prefer item with rating > 0
+            if best is None:
+                with_rating = [i for i in items if i.get("rating", {}).get("value")]
+                best = with_rating[0] if with_rating else items[0]
 
-        douban_id = best.get("id", "")
-        if not douban_id:
-            continue
+            douban_id = best.get("id", "")
+            if not douban_id:
+                continue
 
-        rating_info = best.get("rating", {}) or {}
-        rating = rating_info.get("value", "")
-        star_count = rating_info.get("star_count", "")
+            rating_info = best.get("rating", {}) or {}
+            rating = rating_info.get("value", "")
+            star_count = rating_info.get("star_count", "")
 
-        abstract = best.get("abstract", "") or ""
-        abstract_2 = best.get("abstract_2", "") or ""
-        synopsis = abstract + (" · " + abstract_2 if abstract_2 else "")
+            abstract = best.get("abstract", "") or ""
+            abstract_2 = best.get("abstract_2", "") or ""
+            synopsis = abstract + (" · " + abstract_2 if abstract_2 else "")
 
-        result = {"douban_id": douban_id}
-        if rating:
-            result["rating"] = float(rating)
-        if star_count:
-            result["star_count"] = float(star_count)
-        if abstract:
-            result["synopsis"] = synopsis
+            result = {"douban_id": douban_id}
+            if rating:
+                result["rating"] = float(rating)
+            if star_count:
+                result["star_count"] = float(star_count)
+            if abstract:
+                result["synopsis"] = synopsis
 
-        return result
+            return result
 
     return None
 
@@ -148,11 +170,14 @@ def get_douban_metadata_by_id(douban_id):
         return cached.get("data")
 
     # For a known ID, search by that ID on douban
-    url = DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode({"search_text": douban_id, "cat": "1002"})
     opener = _get_opener()
-    html = _request(url, opener)
     result = None
-    if html:
+    for cat in ["1002", ""]:
+        url = DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode({"search_text": douban_id, "cat": cat}) if cat else \
+              DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode({"search_text": douban_id})
+        html = _request(url, opener)
+        if not html:
+            continue
         items = _parse_search_data(html)
         for item in items:
             if item.get("id") == douban_id:
@@ -165,6 +190,8 @@ def get_douban_metadata_by_id(douban_id):
                 if abstract:
                     result["synopsis"] = abstract
                 break
+        if result:
+            break
 
     cache[cache_key] = {"_cached_at": time.time(), "data": result}
     write_json(METADATA_CACHE_FILE, cache)
