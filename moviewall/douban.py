@@ -120,17 +120,11 @@ def search_and_fetch(title_cn, title_en, year):
             rating = rating_info.get("value", "")
             star_count = rating_info.get("star_count", "")
 
-            abstract = best.get("abstract", "") or ""
-            abstract_2 = best.get("abstract_2", "") or ""
-            synopsis = abstract + (" · " + abstract_2 if abstract_2 else "")
-
             result = {"douban_id": douban_id}
             if rating:
                 result["rating"] = float(rating)
             if star_count:
                 result["star_count"] = float(star_count)
-            if abstract:
-                result["synopsis"] = synopsis
 
             return result
 
@@ -183,12 +177,9 @@ def get_douban_metadata_by_id(douban_id):
             if item.get("id") == douban_id:
                 rating_info = item.get("rating", {}) or {}
                 rating = rating_info.get("value", "")
-                abstract = item.get("abstract", "") or ""
                 result = {"douban_id": douban_id}
                 if rating:
                     result["rating"] = float(rating)
-                if abstract:
-                    result["synopsis"] = abstract
                 break
         if result:
             break

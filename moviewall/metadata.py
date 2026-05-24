@@ -103,8 +103,6 @@ def attach_metadata(item):
 
         if douban_data:
             meta["douban"] = douban_data
-            if douban_data.get("synopsis") and tmdb:
-                tmdb["overview"] = douban_data["synopsis"]
 
     item["metadata"] = meta
     return item
