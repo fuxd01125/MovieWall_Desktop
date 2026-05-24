@@ -107,10 +107,6 @@ function renderCategoryTabs() {
 
 function setTab(key) {
   activeTab = key;
-  activeCategory = "all";
-  if (key === "anime") {
-    activeCategory = "anime";
-  }
   navStack = [];
   renderHome();
 }
@@ -235,7 +231,6 @@ function getFilteredItems() {
     } else if (activeTab !== "all") {
       if (item.type !== activeTab) return false;
     }
-    if (activeCategory !== "all" && item.category_key !== activeCategory) return false;
     if (!q) return true;
     let bag = (titleOf(item) + " " + (item.title || "") + " " + (item.year || "") + " " + (item.category_name || "")).toLowerCase();
     if (item.type === "movie") bag += " " + (item.filename || "") + " " + (item.folder || "");
