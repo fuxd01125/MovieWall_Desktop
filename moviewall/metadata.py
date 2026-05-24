@@ -47,16 +47,24 @@ def get_tmdb_metadata(title, year, media_type):
 def attach_season_metadata(item, tmdb_id, lang):
     if item.get("type") != "show":
         return
+    cache = read_json(METADATA_CACHE_FILE, {})
     season_map = {}
     for season in item.get("seasons", []):
         sn = season.get("season_number")
         if not sn:
             continue
-        data = tmdb_request(f"tv/{tmdb_id}/season/{sn}", {"language": lang})
-        if data:
-            rating = data.get("vote_average")
-            air_date = data.get("air_date", "")
-            overview = data.get("overview", "")
+        cache_key = f"season:{tmdb_id}:{sn}:{lang}"
+        cached = cache.get(cache_key)
+        if cached and time.time() - cached.get("_cached_at", 0) < int(load_config().get("metadata_cache_days", 30)) * 86400:
+            sdata = cached.get("data", {})
+        else:
+            sdata = tmdb_request(f"tv/{tmdb_id}/season/{sn}", {"language": lang}) or {}
+            if sdata:
+                cache[cache_key] = {"_cached_at": time.time(), "data": sdata}
+        if sdata:
+            rating = sdata.get("vote_average")
+            air_date = sdata.get("air_date", "")
+            overview = sdata.get("overview", "")
             if rating:
                 season_map[str(sn)] = {
                     "rating": rating,
@@ -65,6 +73,7 @@ def attach_season_metadata(item, tmdb_id, lang):
                 }
     if season_map:
         item["_season_meta"] = season_map
+    write_json(METADATA_CACHE_FILE, cache)
 
 
 def attach_metadata(item):

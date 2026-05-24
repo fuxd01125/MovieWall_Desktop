@@ -112,7 +112,10 @@ def scan_show_category(category_folder, category_key, category_name, mtimes, ite
         any_changed = any(_folder_mtime(f) > mtimes.get(str(f.resolve()), 0) for f in all_folders)
 
         if not any_changed and show_key in item_map:
-            shows.append(item_map[show_key])
+            existing = item_map[show_key]
+            if not existing.get("_season_meta"):
+                existing = attach_metadata(existing)
+            shows.append(existing)
             for f in all_folders:
                 new_mtimes[str(f.resolve())] = _folder_mtime(f)
             continue
