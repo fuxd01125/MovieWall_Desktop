@@ -619,3 +619,63 @@ mark{
   color:var(--accent);
   font-weight:950
 }
+
+/* ===== Toast ===== */
+.toast{
+  position:fixed;
+  bottom:40px;
+  left:50%;
+  transform:translateX(-50%) translateY(20px);
+  z-index:999;
+  padding:14px 24px;
+  border-radius:16px;
+  color:#111;
+  font-weight:900;
+  font-size:14px;
+  background:linear-gradient(135deg,var(--accent),#ffe2a0);
+  box-shadow:0 12px 40px rgba(0,0,0,.5);
+  opacity:0;
+  transition:opacity .3s,transform .3s;
+  pointer-events:none;
+  white-space:nowrap
+}
+.toast.show{
+  opacity:1;
+  transform:translateX(-50%) translateY(0)
+}
+
+/* ===== Scan Progress Bar ===== */
+.scan-bar{
+  height:3px;
+  background:var(--accent);
+  transform:scaleX(0);
+  transform-origin:left;
+  transition:transform .3s
+}
+.scan-bar.active{
+  transform:scaleX(1);
+  animation:scanPulse 1.2s ease-in-out infinite
+}
+@keyframes scanPulse{
+  0%{opacity:1}
+  50%{opacity:.3}
+  100%{opacity:1}
+}
+
+/* ===== Page Transition ===== */
+main{
+  animation:fadeUp .25s ease
+}
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(14px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+/* ===== Image Fade In ===== */
+.cover img{
+  animation:imgFade .35s ease
+}
+@keyframes imgFade{
+  from{opacity:0}
+  to{opacity:1}
+}

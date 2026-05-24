@@ -45,6 +45,7 @@ function setUserRating(itemId, score) {
   delete ratingEditMode[itemId];
   renderRoute(currentView);
   apiPutRating(itemId, score);
+  showToast("评分已保存 " + Number(score).toFixed(1) + " / 10");
 }
 
 function openRatingEditor(itemId) {
@@ -62,6 +63,7 @@ function clearUserRating(itemId) {
   delete ratingEditMode[itemId];
   renderRoute(currentView);
   apiDeleteRating(itemId);
+  showToast("评分已清除");
 }
 
 function escapeHtml(s) {
@@ -88,13 +90,25 @@ function backdropUrl(item) {
   return tmdb(item).backdrop_url || artworkUrl(item, "thumb") || artworkUrl(item, "poster");
 }
 
+function showToast(msg, duration) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = msg;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => {
+    el.classList.remove("show");
+    setTimeout(() => el.remove(), 300);
+  }, duration || 2500);
+}
+
 function imgOrPlaceholder(item, kind="poster", shape="poster", label="") {
   const src = artworkUrl(item, kind);
   const title = label || titleOf(item);
   const cls = shape ? `cover ${shape}` : "cover";
   const ph = item?.type === "episode" ? "placeholder episode-placeholder" : "placeholder";
   if (src) {
-    return `<div class="${cls}"><img src="${src}" onerror="this.parentElement.innerHTML='<div class=&quot;${ph}&quot;>${escapeHtml(title)}</div>'"><div class="overlay-play">▶</div></div>`;
+    return `<div class="${cls}"><img src="${src}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=&quot;${ph}&quot;>${escapeHtml(title)}</div>'"><div class="overlay-play">▶</div></div>`;
   }
   return `<div class="${cls}"><div class="${ph}">${escapeHtml(title)}</div><div class="overlay-play">▶</div></div>`;
 }
@@ -304,7 +318,7 @@ async function openFolder(folder) {
 function detailHero(item, bodyHtml) {
   const bg = backdropUrl(item);
   const poster = artworkUrl(item, "poster") || artworkUrl(item, "thumb");
-  return `<section class="detail-hero">${bg ? `<div class="detail-backdrop" style="background-image:url('${bg}')"></div>` : ""}<div class="detail-content"><div class="detail-poster">${poster ? `<img src="${poster}">` : `<div class="placeholder">${escapeHtml(titleOf(item))}</div>`}</div><div class="detail-info">${bodyHtml}</div></div></section>`;
+  return `<section class="detail-hero">${bg ? `<div class="detail-backdrop" style="background-image:url('${bg}')"></div>` : ""}<div class="detail-content"><div class="detail-poster">${poster ? `<img src="${poster}" loading="lazy">` : `<div class="placeholder">${escapeHtml(titleOf(item))}</div>`}</div><div class="detail-info">${bodyHtml}</div></div></section>`;
 }
 
 function renderMovieDetail(item) {
@@ -490,13 +504,18 @@ async function loadLibrary() {
 }
 
 scanBtn.onclick = async () => {
-  scanBtn.textContent = "扫描中...";
+  const bar = document.getElementById("scanBar");
+  scanBtn.textContent = "扫描中";
   scanBtn.disabled = true;
+  if (bar) bar.classList.add("active");
   const res = await fetch("/api/scan", {method:"POST"});
   library = await res.json();
   scanBtn.disabled = false;
   scanBtn.textContent = "扫描";
-  if (library.error) alert(library.error);
+  if (bar) bar.classList.remove("active");
+  if (library.error) { showToast(library.error, 4000); return; }
+  const s = library.stats;
+  showToast("扫描完成 - " + (s.movies + s.shows) + " 部作品 / " + s.episodes + " 集");
   navStack = [];
   renderHome();
 };
