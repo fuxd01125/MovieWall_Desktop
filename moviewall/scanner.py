@@ -54,14 +54,22 @@ def scan_movies_category(category_folder, category_key, category_name, mtimes, i
     changed_dirs, unchanged = _changed_folders(dirs, mtimes)
     for key, cur in unchanged:
         if key in item_map:
-            items.append(item_map[key])
+            existing = item_map[key]
+            meta = existing.get("metadata", {})
+            if not meta.get("douban"):
+                existing = attach_metadata(existing)
+            items.append(existing)
         new_mtimes[key] = cur
 
     loose = [p for p in category_folder.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTS]
     changed_loose, unchanged_loose = _changed_folders(loose, mtimes)
     for key, cur in unchanged_loose:
         if key in item_map:
-            items.append(item_map[key])
+            existing = item_map[key]
+            meta = existing.get("metadata", {})
+            if not meta.get("douban"):
+                existing = attach_metadata(existing)
+            items.append(existing)
         new_mtimes[key] = cur
 
     for movie_folder in changed_dirs:
@@ -113,7 +121,9 @@ def scan_show_category(category_folder, category_key, category_name, mtimes, ite
 
         if not any_changed and show_key in item_map:
             existing = item_map[show_key]
-            if not existing.get("_season_meta"):
+            meta = existing.get("metadata", {})
+            needs_meta = not existing.get("_season_meta") or not meta.get("douban")
+            if needs_meta:
                 existing = attach_metadata(existing)
             shows.append(existing)
             for f in all_folders:
