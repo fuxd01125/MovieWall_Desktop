@@ -1,0 +1,12 @@
+__pycache__/
+build/
+dist/
+*.spec
+*.log
+config.json
+library.json
+metadata_cache.json
+local_metadata.json
+ratings.json
+history.json
+static/generated/

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>MovieWall</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand" onclick="goHome()">
+      <div class="logo">MW</div>
+      <h1>MovieWall</h1>
+    </div>
+    <div class="tools">
+      <input id="search" placeholder="搜索电影 / 剧集 / 集数">
+      <button id="scanBtn">扫描</button>
+    </div>
+  </header>
+  <nav id="tabs" class="tabs"></nav>
+  <main id="app"></main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
