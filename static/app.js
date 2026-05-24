@@ -381,62 +381,6 @@ function renderSeasonDetail(show, season) {
   `;
 }
 
-    ${ratingWidget(season)}
-
-    <div class="detail-actions">
-
-      ${renderPlayButtons('', '') /* placeholder, replaced below */}
-      <script>
-        document.currentScript.parentElement.innerHTML = document.currentScript.parentElement.innerHTML.replace(
-          'renderPlayButtons',
-          (function(){
-            const showId = '${show.id}';
-            const sn = ${season.season_number};
-            const firstEp = (season.episodes || [])[0];
-            if (!firstEp) return '<button disabled>无剧集</button>';
-            const entry = episodeEntry(show, season, firstEp, season.title + ' · ' + firstEp.title);
-            return renderPlayButtons(firstEp.path, entry);
-          })()
-        );
-      </script>
-
-      <button
-        class="ghost"
-        onclick="openFolder('${escapeJs(season.folder)}')">
-        打开文件夹
-      </button>
-
-      ${navButtons(`
-        <button
-          class="ghost"
-          onclick="renderRoute({type:'detail',id:'${show.id}'})">
-          全部季
-        </button>
-      `)}
-
-    </div>
-  `;
-
-  app.innerHTML = `
-    ${detailHero(seasonHero, body)}
-
-    <section class="section">
-
-      <div class="section-head">
-        <h2>分集</h2>
-        <small>${season.episode_count || 0} 集</small>
-      </div>
-
-      <div class="episode-wall">
-        ${(season.episodes || [])
-          .map(ep => renderEpisodeCard(show, season, ep))
-          .join("")}
-      </div>
-
-    </section>
-  `;
-}
-
 
 
 function episodeEntry(show, season, ep, label) {
