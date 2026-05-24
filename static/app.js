@@ -412,6 +412,11 @@ function playSavedHistory() {
   if (last) playMedia(last.path, last);
 }
 
+function playItemHistory(itemId) {
+  const hist = historyCache[itemId];
+  if (hist) playMedia(hist.path, hist);
+}
+
 async function openFolder(folder) {
   await fetch("/api/open_folder", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({folder})});
 }
@@ -483,7 +488,7 @@ function renderMovieDetail(item) {
     + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
-    + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playSavedHistory()">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
+    + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
     + '<button class="cta-btn secondary" onclick="showToast(\'收藏功能开发中\')">☆ 收藏</button>'
     + '<button class="cta-btn secondary" onclick="showToast(\'评论功能开发中\')">✎ 写评论</button>'
     + more
@@ -511,7 +516,7 @@ function renderShowDetail(item) {
     + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
-    + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playSavedHistory()">▶ 继续播放</button>' : '')
+    + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '')
     + (firstEntry ? '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(firstEp.ep.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '')
     + '<button class="cta-btn secondary" onclick="showToast(\'收藏功能开发中\')">☆ 收藏</button>'
     + more
