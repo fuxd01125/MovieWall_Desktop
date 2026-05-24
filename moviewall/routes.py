@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import abort, jsonify, render_template, request, send_file
 
-from moviewall.config import load_config, load_library, read_ratings, write_ratings, read_history, write_history
+from moviewall.config import load_config, load_library, read_ratings, write_ratings, read_history, write_history, load_players, normalize_categories, write_json, CONFIG_FILE
 from moviewall.scanner import scan_library
 
 
@@ -90,14 +90,29 @@ def register_routes(app):
         media_path = data.get("path")
         if not media_path or not is_allowed_media_path(media_path):
             abort(403)
-        potplayer = load_config().get("potplayer_path", "")
-        if not Path(potplayer).exists():
-            return jsonify({"ok": False, "error": "PotPlayer 路径不存在，请检查 config.json"}), 400
+        players = load_players()
+        player_name = data.get("player") or ""
+        exe = ""
+        if player_name:
+            for p in players:
+                if p.get("name") == player_name:
+                    exe = p.get("path", "")
+                    break
+        if not exe and players:
+            exe = players[0].get("path", "")
+        if not exe:
+            exe = load_config().get("potplayer_path", "")
+        if not exe or not Path(exe).exists():
+            return jsonify({"ok": False, "error": "没有可用的播放器，请检查 config.json 中的 players 或 potplayer_path"}), 400
         try:
-            subprocess.Popen([potplayer, media_path], shell=False)
-            return jsonify({"ok": True})
+            subprocess.Popen([exe, media_path], shell=False)
+            return jsonify({"ok": True, "player": Path(exe).stem})
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/players")
+    def api_players():
+        return jsonify(load_players())
 
     @app.route("/api/open_folder", methods=["POST"])
     def api_open_folder():
@@ -108,6 +123,23 @@ def register_routes(app):
             subprocess.Popen(["explorer", str(Path(folder).resolve())])
             return jsonify({"ok": True})
         return jsonify({"ok": False, "error": "仅支持 Windows Explorer"}), 400
+
+    @app.route("/api/config", methods=["GET"])
+    def api_get_config():
+        cfg = load_config()
+        return jsonify({
+            "categories": normalize_categories(),
+            "library_root": cfg.get("library_root", ""),
+        })
+
+    @app.route("/api/config", methods=["PUT"])
+    def api_update_config():
+        data = request.get_json(force=True)
+        if "categories" in data:
+            cfg = load_config()
+            cfg["categories"] = data["categories"]
+            write_json(CONFIG_FILE, cfg)
+        return jsonify({"ok": True})
 
     @app.route("/api/ratings", methods=["GET"])
     def api_get_ratings():

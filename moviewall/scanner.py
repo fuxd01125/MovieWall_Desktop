@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from moviewall.config import load_config, save_library, load_library, APP_DIR
+from moviewall.config import load_config, save_library, load_library, APP_DIR, normalize_categories
 from moviewall.constants import VIDEO_EXTS
 from moviewall.utils import stable_id, clean_title, parse_year, parse_season_number, parse_episode_number, pretty_season, pretty_episode, generate_video_image, ffmpeg_exe
 from moviewall.artwork import find_movie_poster, find_show_poster, find_season_poster, find_episode_thumb
@@ -164,7 +164,7 @@ def scan_show_category(category_folder, category_key, category_name, mtimes, ite
 def scan_library(force=False):
     cfg = load_config()
     root = Path(cfg.get("library_root", "")).expanduser()
-    categories = cfg.get("categories", {"Movies": "电影", "TV Shows": "剧集", "Anime": "动漫"})
+    categories = normalize_categories()
     stats = {"root": str(root), "movies": 0, "shows": 0, "episodes": 0, "categories": {}, "ffmpeg_available": bool(ffmpeg_exe()), "tmdb_enabled": bool((cfg.get("tmdb_api_key") or "").strip())}
     items = []
     all_mtimes = {}
@@ -178,11 +178,12 @@ def scan_library(force=False):
     old_mtimes = old_data.get("_scan_mtimes", {}) if not force else {}
     item_map = _build_item_map(old_data.get("items", []))
 
-    for folder_name, display in categories.items():
+    for folder_name, cat in categories.items():
         folder = root / folder_name
         if not folder.exists():
             continue
-        if folder_name.lower() == "movies":
+        display = cat["name"]
+        if cat.get("type") == "movie":
             cat_items, cat_mtimes = scan_movies_category(folder, folder_name, display, old_mtimes, item_map)
         else:
             cat_items, cat_mtimes = scan_show_category(folder, folder_name, display, old_mtimes, item_map)

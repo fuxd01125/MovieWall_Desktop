@@ -589,6 +589,31 @@ main{
   display:none
 }
 
+.settings-cat-row{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  margin-bottom:10px
+}
+.settings-cat-row input,.settings-cat-row select{
+  flex:1;
+  min-width:0
+}
+.settings-cat-row button{
+  flex:none;
+  padding:8px 12px
+}
+.settings-hint{
+  color:var(--muted);
+  font-size:13px;
+  margin:0 0 14px
+}
+.settings-actions{
+  display:flex;
+  gap:10px;
+  margin-top:16px
+}
+
 mark{
   background:transparent;
   color:var(--accent);

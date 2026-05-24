@@ -2,6 +2,8 @@ let library = {items: [], stats: {}};
 let activeCategory = "all";
 let currentView = {type: "home"};
 let navStack = [];
+let players = [];
+let categoriesConfig = {};
 
 const app = document.querySelector("#app");
 const tabs = document.querySelector("#tabs");
@@ -228,6 +230,15 @@ function getFilteredItems() {
   });
 }
 
+function renderPlayButtons(path, entryStr) {
+  if (!players || players.length <= 1) {
+    return `<button onclick="playMedia('${escapeJs(path)}',${entryStr})">播放</button>`;
+  }
+  return players.map(p =>
+    `<button onclick="playMedia('${escapeJs(path)}',${entryStr},'${escapeJs(p.name)}')">${escapeHtml(p.name)}</button>`
+  ).join("");
+}
+
 function renderHome() {
   currentView = {type:"home"};
   renderTabs();
@@ -251,9 +262,10 @@ function renderContinueCard(last) {
   const item = findItem(last.media_id);
   const title = last.show_title || last.title || titleOf(item);
   const label = last.label || last.short_label || "上次播放";
+  const pb = renderPlayButtons(last.path, `{media_id:'${last.media_id}',type:'${last.type}',path:'${escapeJs(last.path)}',title:'${escapeJs(title)}',show_title:'${escapeJs(last.show_title || title)}',label:'${escapeJs(label)}',short_label:'${escapeJs(last.short_label || "")}'}`).replace(/onclick="/g, 'onclick="event.stopPropagation();');
   return `<article class="card continue-inline-card" onclick="playSavedHistory()">
     ${imgOrPlaceholder(item || last, "poster", "poster", title)}
-    <div class="card-body"><div class="continue-kicker">继续观看</div><h4 class="card-title">${escapeHtml(title)}</h4><div class="meta">${escapeHtml(label)}</div><div class="progress-pill">上次播放到这里</div><div class="mini-actions" onclick="event.stopPropagation()"><button onclick="playSavedHistory()">播放</button>${item ? `<button class="ghost" onclick="openDetail('${item.id}')">详情</button>` : ""}</div></div>
+    <div class="card-body"><div class="continue-kicker">继续观看</div><h4 class="card-title">${escapeHtml(title)}</h4><div class="meta">${escapeHtml(label)}</div><div class="progress-pill">上次播放到这里</div><div class="mini-actions" onclick="event.stopPropagation()">${pb}${item ? `<button class="ghost" onclick="openDetail('${item.id}')">详情</button>` : ""}</div></div>
   </article>`;
 }
 
@@ -267,9 +279,11 @@ function renderHomeCard(item) {
 function openDetail(id) { navigateTo({type:"detail", id}); }
 function openSeason(showId, seasonNumber) { navigateTo({type:"season", showId, seasonNumber}); }
 
-async function playMedia(path, entry) {
+async function playMedia(path, entry, player) {
   const route = {...currentView};
-  const res = await fetch("/api/play", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({path})});
+  const body = {path};
+  if (player) body.player = player;
+  const res = await fetch("/api/play", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
   const data = await res.json().catch(() => ({}));
   if (!data.ok) return alert(data.error || "播放失败");
   if (entry) {
@@ -296,16 +310,17 @@ function detailHero(item, bodyHtml) {
 function renderMovieDetail(item) {
   currentView = {type:"detail", id:item.id};
   renderTabs();
-  const overview = tmdb(item).overview || item?.metadata?.local?.summary || "";
+  const overview = tmdb(item).overview;
   const hist = getItemHistory(item);
-  const body = `<div class="rating-row">${metaBadges(item)}</div><h2>${escapeHtml(titleOf(item))}</h2>${overview ? `<p class="overview">${escapeHtml(overview)}</p>` : ""}${hist ? `<div class="progress-pill">上次播放：${escapeHtml(hist.label || "这部电影")}</div>` : ""}${ratingWidget(item)}<div class="detail-actions"><button onclick="playMedia('${escapeJs(item.path)}',{media_id:'${item.id}',type:'movie',path:'${escapeJs(item.path)}',title:'${escapeJs(titleOf(item))}',show_title:'${escapeJs(titleOf(item))}',label:'电影',short_label:'电影'})">播放</button><button class="ghost" onclick="openFolder('${escapeJs(item.folder)}')">打开文件夹</button>${navButtons()}</div>`;
+  const entry = `{media_id:'${item.id}',type:'movie',path:'${escapeJs(item.path)}',title:'${escapeJs(titleOf(item))}',show_title:'${escapeJs(titleOf(item))}',label:'电影',short_label:'电影'}`;
+  const body = `<div class="rating-row">${metaBadges(item)}</div><h2>${escapeHtml(titleOf(item))}</h2>${overview ? `<p class="overview">${escapeHtml(overview)}</p>` : ""}${hist ? `<div class="progress-pill">上次播放：${escapeHtml(hist.label || "这部电影")}</div>` : ""}${ratingWidget(item)}<div class="detail-actions">${renderPlayButtons(item.path, entry)}<button class="ghost" onclick="openFolder('${escapeJs(item.folder)}')">打开文件夹</button>${navButtons()}</div>`;
   app.innerHTML = detailHero(item, body);
 }
 
 function renderShowDetail(item) {
   currentView = {type:"detail", id:item.id};
   renderTabs();
-  const overview = tmdb(item).overview || item?.metadata?.local?.summary || "";
+  const overview = tmdb(item).overview;
   const hist = getItemHistory(item);
   const body = `<div class="rating-row">${metaBadges(item)}</div><h2>${escapeHtml(titleOf(item))}</h2>${overview ? `<p class="overview">${escapeHtml(overview)}</p>` : ""}${hist ? `<div class="progress-pill">上次播放到 ${escapeHtml(hist.label || "")}</div>` : ""}${ratingWidget(item)}<div class="detail-actions">${hist ? `<button onclick="playSavedHistory()">继续播放</button>` : ""}<button class="ghost" onclick="openFolder('${escapeJs(item.folder)}')">打开文件夹</button>${navButtons()}</div>`;
   app.innerHTML = `${detailHero(item, body)}<section class="section"><div class="section-head"><h2>季</h2><small>${item.season_count || 0} 季</small></div><div class="season-wall">${(item.seasons || []).map(s => renderSeasonCard(item, s)).join("")}</div></section>`;
@@ -318,14 +333,15 @@ function renderSeasonCard(show, season) {
 }
 
 function renderSeasonDetail(show, season) {
-
   currentView = {
     type:"season",
     showId:show.id,
     seasonNumber:season.season_number
   };
-
   renderTabs();
+
+  const firstEp = (season.episodes || [])[0];
+  const firstEntry = firstEp ? episodeEntry(show, season, firstEp, season.title + ' · ' + firstEp.title) : "";
 
   const seasonHero = {
     ...season,
@@ -334,35 +350,55 @@ function renderSeasonDetail(show, season) {
     metadata:show.metadata
   };
 
-  // 季简介
-  const overview =
-    season?.metadata?.overview ||
-    tmdb(show).overview ||
-    show?.metadata?.local?.summary ||
-    "";
+  const overview = season?.metadata?.overview || tmdb(show).overview || "";
 
   const body = `
-
     <div class="rating-row">
       ${metaBadges(show)}
       <span class="badge">${season.episode_count || 0} 集</span>
     </div>
-
     <h2>${escapeHtml(season.title)}</h2>
+    ${overview ? `<p class="overview">${escapeHtml(overview)}</p>` : ""}
+    ${ratingWidget(season)}
+    <div class="detail-actions">
+      ${firstEp ? renderPlayButtons(firstEp.path, firstEntry) : '<button disabled>无剧集</button>'}
+      <button class="ghost" onclick="openFolder('${escapeJs(season.folder)}')">打开文件夹</button>
+      ${navButtons(`<button class="ghost" onclick="renderRoute({type:'detail',id:'${show.id}'})">全部季</button>`)}
+    </div>
+  `;
 
-    ${
-      overview
-      ? `<p class="overview">${escapeHtml(overview)}</p>`
-      : ""
-    }
+  app.innerHTML = `
+    ${detailHero(seasonHero, body)}
+    <section class="section">
+      <div class="section-head">
+        <h2>分集</h2>
+        <small>${season.episode_count || 0} 集</small>
+      </div>
+      <div class="episode-wall">
+        ${(season.episodes || []).map(ep => renderEpisodeCard(show, season, ep)).join("")}
+      </div>
+    </section>
+  `;
+}
 
     ${ratingWidget(season)}
 
     <div class="detail-actions">
 
-      <button onclick="playFirstEpisode('${show.id}',${season.season_number})">
-        播放本季第一集
-      </button>
+      ${renderPlayButtons('', '') /* placeholder, replaced below */}
+      <script>
+        document.currentScript.parentElement.innerHTML = document.currentScript.parentElement.innerHTML.replace(
+          'renderPlayButtons',
+          (function(){
+            const showId = '${show.id}';
+            const sn = ${season.season_number};
+            const firstEp = (season.episodes || [])[0];
+            if (!firstEp) return '<button disabled>无剧集</button>';
+            const entry = episodeEntry(show, season, firstEp, season.title + ' · ' + firstEp.title);
+            return renderPlayButtons(firstEp.path, entry);
+          })()
+        );
+      </script>
 
       <button
         class="ghost"
@@ -412,7 +448,8 @@ function renderEpisodeCard(show, season, ep) {
   const active = hist && hist.episode_id === ep.id;
   const label = `${season.title} · ${ep.title}`;
   const entry = episodeEntry(show, season, ep, label);
-  return `<article class="card episode-card" onclick="playMedia('${escapeJs(ep.path)}',${entry})">${imgOrPlaceholder(ep,"thumb","",`${titleOf(show)} ${label}`)}<div class="card-body"><h4 class="card-title">${escapeHtml(ep.title)}</h4><div class="meta">${escapeHtml(ep.filename)}</div>${active ? `<div class="progress-pill">上次播放到这里</div>` : ""}<div class="episode-actions"><button onclick="event.stopPropagation(); playMedia('${escapeJs(ep.path)}',${entry})">播放</button><button class="ghost" onclick="event.stopPropagation(); openFolder('${escapeJs(ep.folder)}')">文件夹</button></div></div></article>`;
+  const pb = renderPlayButtons(ep.path, entry).replace(/onclick="/g, 'onclick="event.stopPropagation();');
+  return `<article class="card episode-card" onclick="playMedia('${escapeJs(ep.path)}',${entry})">${imgOrPlaceholder(ep,"thumb","",`${titleOf(show)} ${label}`)}<div class="card-body"><h4 class="card-title">${escapeHtml(ep.title)}</h4><div class="meta">${escapeHtml(ep.filename)}</div>${active ? `<div class="progress-pill">上次播放到这里</div>` : ""}<div class="episode-actions">${pb}<button class="ghost" onclick="event.stopPropagation(); openFolder('${escapeJs(ep.folder)}')">文件夹</button></div></div></article>`;
 }
 
 function playFirstEpisode(showId, seasonNumber) {
@@ -437,15 +474,74 @@ function toggleOverview() {
   }
 }
 
+function renderSettings() {
+  navStack = [];
+  currentView = {type:"home"};
+  const catKeys = Object.keys(categoriesConfig);
+  const rows = catKeys.map((key, i) => `
+    <div class="settings-cat-row">
+      <input class="sc-folder" value="${escapeHtml(key)}" placeholder="文件夹名">
+      <input class="sc-name" value="${escapeHtml(categoriesConfig[key].name)}" placeholder="显示名">
+      <select class="sc-type">
+        <option value="movie" ${categoriesConfig[key].type === "movie" ? "selected" : ""}>电影</option>
+        <option value="show" ${categoriesConfig[key].type === "show" ? "selected" : ""}>剧集</option>
+      </select>
+      <button class="ghost" onclick="this.closest('.settings-cat-row').remove()">✕</button>
+    </div>
+  `).join("");
+
+  app.innerHTML = `
+    <section class="section">
+      <div class="section-head"><h2>分类管理</h2></div>
+      <p class="settings-hint">修改后点击保存将自动重新扫描。</p>
+      <div id="settingsCats">${rows || '<div class="empty">暂无分类</div>'}</div>
+      <div class="settings-actions">
+        <button onclick="addSettingsRow()">+ 添加分类</button>
+        <button onclick="saveSettings()">保存</button>
+        <button class="ghost" onclick="goHome()">取消</button>
+      </div>
+    </section>
+  `;
+}
+
+function addSettingsRow() {
+  const container = document.getElementById("settingsCats") || app.querySelector("#settingsCats");
+  if (!container) return;
+  const div = document.createElement("div");
+  div.className = "settings-cat-row";
+  div.innerHTML = '<input class="sc-folder" placeholder="文件夹名"><input class="sc-name" placeholder="显示名"><select class="sc-type"><option value="movie">电影</option><option value="show" selected>剧集</option></select><button class="ghost" onclick="this.closest(\'.settings-cat-row\').remove()">✕</button>';
+  container.append(div);
+}
+
+async function saveSettings() {
+  const rows = document.querySelectorAll("#settingsCats .settings-cat-row");
+  const cats = {};
+  for (const row of rows) {
+    const folder = row.querySelector(".sc-folder").value.trim();
+    const name = row.querySelector(".sc-name").value.trim();
+    const type = row.querySelector(".sc-type").value;
+    if (folder && name) cats[folder] = {name, type};
+  }
+  const res = await fetch("/api/config", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({categories: cats})});
+  const data = await res.json();
+  if (data.ok) {
+    scanBtn.click();
+  }
+}
+
 async function loadLibrary() {
-  const [libRes, ratingsRes, historyRes] = await Promise.all([
+  const [libRes, ratingsRes, historyRes, playersRes, configRes] = await Promise.all([
     fetch("/api/library"),
     fetch("/api/ratings"),
-    fetch("/api/history")
+    fetch("/api/history"),
+    fetch("/api/players"),
+    fetch("/api/config")
   ]);
   library = await libRes.json();
   ratingsCache = await ratingsRes.json();
   historyCache = await historyRes.json();
+  players = await playersRes.json();
+  categoriesConfig = (await configRes.json()).categories || {};
   renderHome();
 }
 

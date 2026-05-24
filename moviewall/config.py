@@ -56,3 +56,26 @@ def read_history():
 
 def write_history(data):
     write_json(HISTORY_FILE, data)
+
+
+def load_players():
+    cfg = load_config()
+    players = cfg.get("players")
+    if players:
+        return [p for p in players if Path(p.get("path", "")).exists()]
+    pp = cfg.get("potplayer_path", "")
+    if pp and Path(pp).exists():
+        return [{"name": "PotPlayer", "path": pp}]
+    return []
+
+
+def normalize_categories():
+    cfg = load_config()
+    raw = cfg.get("categories", {"Movies": "电影", "TV Shows": "剧集", "Anime": "动漫"})
+    out = {}
+    for key, val in raw.items():
+        if isinstance(val, str):
+            out[key] = {"name": val, "type": "show" if key.lower() != "movies" else "movie"}
+        else:
+            out[key] = val
+    return out
