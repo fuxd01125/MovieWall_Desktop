@@ -10,9 +10,15 @@ from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_
 
 DOUBAN_SEARCH_URL = "https://movie.douban.com/subject_search"
 DOUBAN_HOME_URL = "https://movie.douban.com/"
+DOUBAN_MOBILE_URL = "https://m.douban.com/movie/subject/{}/"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+}
+
+MOBILE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
     "Accept-Language": "zh-CN,zh;q=0.9",
 }
 
@@ -125,10 +131,56 @@ def search_and_fetch(title_cn, title_en, year):
                 result["rating"] = float(rating)
             if star_count:
                 result["star_count"] = float(star_count)
+            abstract = best.get("abstract", "") or ""
+            abstract_2 = best.get("abstract_2", "") or ""
+            if abstract:
+                result["abstract"] = abstract
+            if abstract_2:
+                result["abstract_2"] = abstract_2
 
             return result
 
     return None
+
+
+def fetch_douban_synopsis(douban_id):
+    """Fetch plot synopsis from the mobile Douban page (works where desktop returns 403)."""
+    cache = read_json(METADATA_CACHE_FILE, {})
+    cache_key = f"synopsis:{douban_id}"
+    cached = cache.get(cache_key)
+    cfg = load_config()
+    if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
+        return cached.get("data")
+
+    delay = float(cfg.get("douban_request_delay", 1.5))
+    time.sleep(delay + random.uniform(0, 0.5))
+    url = DOUBAN_MOBILE_URL.format(douban_id)
+    req = urllib.request.Request(url, headers=dict(MOBILE_HEADERS, Referer="https://m.douban.com/"))
+    synopsis = None
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+            # Method 1: section class="subject-intro" > p
+            m = re.search(r'<section[^>]*class="subject-intro"[^>]*>(.*?)</section>', html, re.DOTALL)
+            if m:
+                m2 = re.search(r'<p[^>]*>(.*?)</p>', m.group(1), re.DOTALL)
+                if m2:
+                    synopsis = re.sub(r'<[^>]+>', '', m2.group(1)).strip()
+                    synopsis = re.sub(r'\s+', ' ', synopsis)
+            # Method 2: meta description (fallback)
+            if not synopsis:
+                m = re.search(r'<meta name="description"[^>]*content="([^"]*)"', html)
+                if m:
+                    desc = m.group(1)
+                    si = desc.find('简介：')
+                    if si >= 0:
+                        synopsis = desc[si+3:].strip()
+    except Exception:
+        pass
+
+    cache[cache_key] = {"_cached_at": time.time(), "data": synopsis}
+    write_json(METADATA_CACHE_FILE, cache)
+    return synopsis
 
 
 def get_douban_metadata(title_cn, title_en, year, media_type):
@@ -145,6 +197,10 @@ def get_douban_metadata(title_cn, title_en, year, media_type):
 
     try:
         result = search_and_fetch(title_cn, title_en, year)
+        if result and result.get("douban_id"):
+            synopsis = fetch_douban_synopsis(result["douban_id"])
+            if synopsis:
+                result["synopsis"] = synopsis
     except Exception:
         result = None
 
@@ -183,6 +239,11 @@ def get_douban_metadata_by_id(douban_id):
                 break
         if result:
             break
+
+    if result and result.get("douban_id"):
+        synopsis = fetch_douban_synopsis(result["douban_id"])
+        if synopsis:
+            result["synopsis"] = synopsis
 
     cache[cache_key] = {"_cached_at": time.time(), "data": result}
     write_json(METADATA_CACHE_FILE, cache)

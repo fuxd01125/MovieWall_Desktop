@@ -510,6 +510,32 @@ function renderPrimaryMeta(item) {
   return parts.join('<span class="sep">·</span>');
 }
 
+function renderDoubanTags(item) {
+  const d = douban(item);
+  const abstract = d.abstract || "";
+  const abstract_2 = d.abstract_2 || "";
+  if (!abstract && !abstract_2) return '';
+  let tags = [];
+  if (abstract) {
+    abstract.split(' / ').forEach(part => {
+      part = part.trim();
+      if (!part) return;
+      if (/^\d+分钟$/.test(part)) {
+        tags.push('<span class="genre-tag douban-tag runtime">' + escapeHtml(part) + '</span>');
+      } else {
+        tags.push('<span class="genre-tag douban-tag">' + escapeHtml(part) + '</span>');
+      }
+    });
+  }
+  let html = '<div class="douban-meta">';
+  if (tags.length) html += '<div class="genre-tags douban-tags">' + tags.join('') + '</div>';
+  if (abstract_2) {
+    html += '<div class="douban-cast"><span class="cast-label">演员</span> <span class="cast-names">' + escapeHtml(abstract_2.replace(/ \/ /g, ' · ')) + '</span></div>';
+  }
+  html += '</div>';
+  return html;
+}
+
 function detailHero(item, bodyHtml) {
   const bg = backdropUrl(item);
   const poster = artworkUrl(item, "poster") || artworkUrl(item, "thumb");
@@ -540,6 +566,7 @@ function renderMovieDetail(item) {
     + (origTitle ? '<div class="detail-subtitle">' + escapeHtml(origTitle) + '</div>' : '')
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
+    + renderDoubanTags(item)
     + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
@@ -571,6 +598,7 @@ function renderShowDetail(item) {
     + (origTitle ? '<div class="detail-subtitle">' + escapeHtml(origTitle) + '</div>' : '')
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
+    + renderDoubanTags(item)
     + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
