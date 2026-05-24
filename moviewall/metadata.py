@@ -77,6 +77,7 @@ def attach_season_metadata(item, tmdb_id, lang):
 
 
 def attach_metadata(item):
+    cfg = load_config()
     media_type = "movie" if item.get("type") == "movie" else "tv"
     tmdb = get_tmdb_metadata(item.get("title", ""), item.get("year", ""), media_type)
     meta = {}
@@ -85,7 +86,6 @@ def attach_metadata(item):
         if tmdb.get("title"):
             item["display_title"] = tmdb["title"]
         if item.get("type") == "show" and tmdb.get("tmdb_id"):
-            cfg = load_config()
             lang = cfg.get("tmdb_language", "zh-CN") or "zh-CN"
             attach_season_metadata(item, tmdb["tmdb_id"], lang)
 
