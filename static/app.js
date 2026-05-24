@@ -324,19 +324,23 @@ function detailHero(item, bodyHtml) {
 function renderMovieDetail(item) {
   currentView = {type:"detail", id:item.id};
   renderTabs();
-  const overview = tmdb(item).overview;
+  const meta = tmdb(item);
+  const overview = meta.overview;
+  const origTitle = meta.original_title && meta.original_title !== titleOf(item) ? meta.original_title : "";
   const hist = getItemHistory(item);
   const entry = `{media_id:'${item.id}',type:'movie',path:'${escapeJs(item.path)}',title:'${escapeJs(titleOf(item))}',show_title:'${escapeJs(titleOf(item))}',label:'电影',short_label:'电影'}`;
-  const body = `<div class="rating-row">${metaBadges(item)}</div><h2>${escapeHtml(titleOf(item))}</h2>${overview ? `<p class="overview">${escapeHtml(overview)}</p>` : ""}${hist ? `<div class="progress-pill">上次播放：${escapeHtml(hist.label || "这部电影")}</div>` : ""}${ratingWidget(item)}<div class="detail-actions">${renderPlayButtons(item.path, entry)}<button class="ghost" onclick="openFolder('${escapeJs(item.folder)}')">打开文件夹</button>${navButtons()}</div>`;
+  const body = `<div class="rating-row">${metaBadges(item)}</div><h2>${escapeHtml(titleOf(item))}</h2>${origTitle ? `<div class="detail-subtitle">${escapeHtml(origTitle)}</div>` : ""}${overview ? `<div class="overview-wrap"><div class="overview" id="overviewText">${escapeHtml(overview)}</div><button class="expand-btn" id="expandBtn" onclick="toggleOverview()">展开全部</button></div>` : ""}${hist ? `<div class="progress-pill">上次播放：${escapeHtml(hist.label || "这部电影")}</div>` : ""}${ratingWidget(item)}<div class="detail-actions">${renderPlayButtons(item.path, entry)}<button class="ghost" onclick="openFolder('${escapeJs(item.folder)}')">打开文件夹</button>${navButtons()}</div>`;
   app.innerHTML = detailHero(item, body);
 }
 
 function renderShowDetail(item) {
   currentView = {type:"detail", id:item.id};
   renderTabs();
-  const overview = tmdb(item).overview;
+  const meta = tmdb(item);
+  const overview = meta.overview;
+  const origTitle = meta.original_title && meta.original_title !== titleOf(item) ? meta.original_title : "";
   const hist = getItemHistory(item);
-  const body = `<div class="rating-row">${metaBadges(item)}</div><h2>${escapeHtml(titleOf(item))}</h2>${overview ? `<p class="overview">${escapeHtml(overview)}</p>` : ""}${hist ? `<div class="progress-pill">上次播放到 ${escapeHtml(hist.label || "")}</div>` : ""}${ratingWidget(item)}<div class="detail-actions">${hist ? `<button onclick="playSavedHistory()">继续播放</button>` : ""}<button class="ghost" onclick="openFolder('${escapeJs(item.folder)}')">打开文件夹</button>${navButtons()}</div>`;
+  const body = `<div class="rating-row">${metaBadges(item)}</div><h2>${escapeHtml(titleOf(item))}</h2>${origTitle ? `<div class="detail-subtitle">${escapeHtml(origTitle)}</div>` : ""}${overview ? `<div class="overview-wrap"><div class="overview" id="overviewText">${escapeHtml(overview)}</div><button class="expand-btn" id="expandBtn" onclick="toggleOverview()">展开全部</button></div>` : ""}${hist ? `<div class="progress-pill">上次播放到 ${escapeHtml(hist.label || "")}</div>` : ""}${ratingWidget(item)}<div class="detail-actions">${hist ? `<button onclick="playSavedHistory()">继续播放</button>` : ""}<button class="ghost" onclick="openFolder('${escapeJs(item.folder)}')">打开文件夹</button>${navButtons()}</div>`;
   app.innerHTML = `${detailHero(item, body)}<section class="section"><div class="section-head"><h2>季</h2><small>${item.season_count || 0} 季</small></div><div class="season-wall">${(item.seasons || []).map(s => renderSeasonCard(item, s)).join("")}</div></section>`;
 }
 
@@ -372,7 +376,7 @@ function renderSeasonDetail(show, season) {
       <span class="badge">${season.episode_count || 0} 集</span>
     </div>
     <h2>${escapeHtml(season.title)}</h2>
-    ${overview ? `<p class="overview">${escapeHtml(overview)}</p>` : ""}
+    ${overview ? `<div class="overview-wrap"><div class="overview" id="overviewText">${escapeHtml(overview)}</div><button class="expand-btn" id="expandBtn" onclick="toggleOverview()">展开全部</button></div>` : ""}
     ${ratingWidget(season)}
     <div class="detail-actions">
       ${firstEp ? renderPlayButtons(firstEp.path, firstEntry) : '<button disabled>无剧集</button>'}
@@ -420,16 +424,11 @@ function playFirstEpisode(showId, seasonNumber) {
 }
 
 function toggleOverview() {
-  const overview = document.getElementById("overviewText");
-  const button = document.querySelector(".expand-button");
-
-  overview.classList.toggle("expanded"); // 切换展开样式
-
-  if (overview.classList.contains("expanded")) {
-    button.textContent = "收起";
-  } else {
-    button.textContent = "展开";
-  }
+  const wrap = document.querySelector(".overview");
+  const btn = document.getElementById("expandBtn");
+  if (!wrap || !btn) return;
+  const expanded = wrap.classList.toggle("expanded");
+  btn.textContent = expanded ? "收起" : "展开全部";
 }
 
 function renderSettings() {
