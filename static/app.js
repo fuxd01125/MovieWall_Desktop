@@ -16,9 +16,11 @@ const breadcrumb = document.querySelector("#breadcrumb");
 
 let ratingsCache = {};
 let historyCache = {};
+let favoritesCache = [];
 
 function loadHistory() { return historyCache; }
 function loadRatings() { return ratingsCache; }
+function isFavorite(id) { return favoritesCache.includes(id); }
 
 async function apiPutRating(mediaId, score) {
   await fetch("/api/ratings", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({media_id:mediaId, score})});
@@ -28,6 +30,23 @@ async function apiDeleteRating(mediaId) {
 }
 async function apiPutHistory(entry) {
   await fetch("/api/history", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(entry)});
+}
+
+async function apiToggleFavorite(mediaId) {
+  const res = await fetch("/api/favorites", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({media_id: mediaId})});
+  return await res.json();
+}
+
+function toggleFavorite(itemId) {
+  const wasFav = isFavorite(itemId);
+  if (wasFav) {
+    favoritesCache = favoritesCache.filter(id => id !== itemId);
+  } else {
+    favoritesCache.push(itemId);
+  }
+  renderRoute(currentView);
+  apiToggleFavorite(itemId);
+  showToast(wasFav ? '已取消收藏' : '已收藏');
 }
 
 function recordPlay(entry) {
@@ -288,8 +307,10 @@ function renderCardOverlay(item) {
 
 function renderHomeCard(item) {
   const q = search.value.trim();
-  return '<article class="card" onclick="openDetail(\'' + item.id + '\')">'
+  const fav = isFavorite(item.id);
+  return '<article class="card' + (fav ? ' is-fav' : '') + '" onclick="openDetail(\'' + item.id + '\')">'
     + '<div class="card-poster">'
+    + (fav ? '<div class="fav-badge">♥</div>' : '')
     + (artworkUrl(item, "poster")
       ? '<img src="' + artworkUrl(item, "poster") + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder\\\'>' + escapeHtml(titleOf(item)) + '</div>\'">'
       : '<div class="placeholder">' + escapeHtml(titleOf(item)) + '</div>')
@@ -500,7 +521,7 @@ function renderMovieDetail(item) {
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
-    + '<button class="cta-btn secondary" onclick="showToast(\'收藏功能开发中\')">♡ 收藏</button>'
+    + '<button class="cta-btn secondary' + (isFavorite(item.id) ? ' favorited' : '') + '" onclick="event.stopPropagation();toggleFavorite(\'' + item.id + '\')">' + (isFavorite(item.id) ? '♥' : '♡') + ' 收藏</button>'
     + '<button class="cta-btn secondary" onclick="showToast(\'评论功能开发中\')">✎ 评论</button>'
     + more
     + '</div>';
@@ -529,7 +550,7 @@ function renderShowDetail(item) {
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '')
     + (firstEntry ? '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(firstEp.ep.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '')
-    + '<button class="cta-btn secondary" onclick="showToast(\'收藏功能开发中\')">☆ 收藏</button>'
+    + '<button class="cta-btn secondary' + (isFavorite(item.id) ? ' favorited' : '') + '" onclick="event.stopPropagation();toggleFavorite(\'' + item.id + '\')">' + (isFavorite(item.id) ? '♥' : '♡') + ' 收藏</button>'
     + more
     + '</div>';
 
@@ -731,15 +752,16 @@ async function saveSettings() {
 
 async function loadLibrary() {
   showSkeleton();
-  const [libRes, ratingsRes, historyRes, playersRes, configRes] = await Promise.all([
+  const [libRes, ratingsRes, historyRes, playersRes, configRes, favRes] = await Promise.all([
     fetch("/api/library"), fetch("/api/ratings"), fetch("/api/history"),
-    fetch("/api/players"), fetch("/api/config")
+    fetch("/api/players"), fetch("/api/config"), fetch("/api/favorites")
   ]);
   library = await libRes.json();
   ratingsCache = await ratingsRes.json();
   historyCache = await historyRes.json();
   players = await playersRes.json();
   categoriesConfig = (await configRes.json()).categories || {};
+  favoritesCache = await favRes.json();
   renderHome();
 }
 

@@ -207,6 +207,21 @@ main{
 
 .card-body{padding:10px 12px 12px}
 
+.fav-badge{
+  position:absolute;top:8px;right:8px;
+  z-index:2;
+  width:28px;height:28px;
+  display:grid;place-items:center;
+  border-radius:50%;
+  background:rgba(231,76,60,.85);
+  color:#fff;
+  font-size:13px;
+  opacity:0;
+  transform:scale(.8);
+  transition:opacity .25s,transform .25s
+}
+.card.is-fav .fav-badge{opacity:1;transform:scale(1)}
+
 .card-title{
   margin:0;font-size:14px;font-weight:600;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4
@@ -367,6 +382,16 @@ main{
 .cta-btn.secondary:hover{
   background:rgba(255,255,255,.1);
   border-color:var(--muted);
+  box-shadow:none
+}
+.cta-btn.favorited{
+  background:rgba(231,76,60,.12);
+  color:#e74c3c;
+  border-color:rgba(231,76,60,.25)
+}
+.cta-btn.favorited:hover{
+  background:rgba(231,76,60,.22);
+  border-color:rgba(231,76,60,.35);
   box-shadow:none
 }
 

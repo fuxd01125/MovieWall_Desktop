@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import abort, jsonify, render_template, request, send_file
 
-from moviewall.config import load_config, load_library, read_ratings, write_ratings, read_history, write_history, load_players, normalize_categories, write_json, CONFIG_FILE
+from moviewall.config import load_config, load_library, read_ratings, write_ratings, read_history, write_history, read_favorites, write_favorites, load_players, normalize_categories, write_json, CONFIG_FILE
 from moviewall.scanner import scan_library
 
 
@@ -187,3 +187,23 @@ def register_routes(app):
         history.pop(media_id, None)
         write_history(history)
         return jsonify({"ok": True})
+
+    @app.route("/api/favorites", methods=["GET"])
+    def api_get_favorites():
+        return jsonify(read_favorites())
+
+    @app.route("/api/favorites", methods=["PUT"])
+    def api_toggle_favorite():
+        data = request.get_json(force=True)
+        media_id = data.get("media_id")
+        if not media_id:
+            return jsonify({"ok": False, "error": "缺少 media_id"}), 400
+        favs = read_favorites()
+        if media_id in favs:
+            favs.remove(media_id)
+            msg = "removed"
+        else:
+            favs.append(media_id)
+            msg = "added"
+        write_favorites(favs)
+        return jsonify({"ok": True, "action": msg})

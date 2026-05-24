@@ -15,6 +15,7 @@ LIBRARY_FILE = APP_DIR / "library.json"
 METADATA_CACHE_FILE = APP_DIR / "metadata_cache.json"
 RATINGS_FILE = APP_DIR / "ratings.json"
 HISTORY_FILE = APP_DIR / "history.json"
+FAVORITES_FILE = APP_DIR / "favorites.json"
 
 
 def read_json(path: Path, default):
@@ -56,6 +57,14 @@ def read_history():
 
 def write_history(data):
     write_json(HISTORY_FILE, data)
+
+
+def read_favorites():
+    return read_json(FAVORITES_FILE, [])
+
+
+def write_favorites(data):
+    write_json(FAVORITES_FILE, data)
 
 
 def load_players():
