@@ -61,7 +61,8 @@ def main():
         log("[4/4] Copying runtime files")
         copy_dir(ROOT / "templates", DIST_DIR / "templates")
         copy_dir(ROOT / "static", DIST_DIR / "static")
-        for name in ["app.py", "config.json", "local_metadata.json", "library.json", "metadata_cache.json", "MovieWall.ico"]:
+        copy_dir(ROOT / "moviewall", DIST_DIR / "moviewall")
+        for name in ["config.json", "local_metadata.json", "library.json", "metadata_cache.json", "MovieWall.ico"]:
             copy_file(ROOT / name, DIST_DIR / name)
         exe = DIST_DIR / "MovieWall.exe"
         if not exe.exists():

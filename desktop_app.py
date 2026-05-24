@@ -8,7 +8,7 @@ from pathlib import Path
 from tkinter import Tk, messagebox
 
 from werkzeug.serving import make_server
-from app import app
+from moviewall import app
 
 APP_TITLE = "MovieWall"
 

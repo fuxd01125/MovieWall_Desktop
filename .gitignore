@@ -10,3 +10,4 @@ local_metadata.json
 ratings.json
 history.json
 static/generated/
+.idea/
