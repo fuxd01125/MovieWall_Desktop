@@ -56,8 +56,8 @@ def scan_show_category(category_folder: Path, category_key: str, category_name: 
                 continue
             season_id = stable_id("season", season_folder.resolve(), sn)
             episodes = []
-            for video in videos:
-                epn = parse_episode_number(video.name)
+            for idx, video in enumerate(videos):
+                epn = parse_episode_number(video.name) or (idx + 1)
                 ep_id = stable_id("episode", video.resolve())
                 thumb = find_episode_thumb(video, show_title, sn, epn)
                 if not thumb:

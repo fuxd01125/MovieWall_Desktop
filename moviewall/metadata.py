@@ -1,7 +1,6 @@
 import time
-from pathlib import Path
 
-from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE, LOCAL_METADATA_FILE
+from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE
 from moviewall.utils import normalize_key, tmdb_request, tmdb_image
 
 
@@ -45,27 +44,13 @@ def get_tmdb_metadata(title, year, media_type):
     return data
 
 
-def get_local_metadata(item_id, title, folder):
-    local = read_json(LOCAL_METADATA_FILE, {"items": {}}).get("items", {})
-    keys = [item_id, title, Path(folder).name if folder else "", normalize_key(title), normalize_key(Path(folder).name if folder else "")]
-    for k in keys:
-        if k and k in local:
-            return local[k]
-    return {}
-
-
 def attach_metadata(item):
     media_type = "movie" if item.get("type") == "movie" else "tv"
     tmdb = get_tmdb_metadata(item.get("title", ""), item.get("year", ""), media_type)
-    local = get_local_metadata(item.get("id"), item.get("title"), item.get("folder"))
     meta = {}
     if tmdb:
         meta["tmdb"] = tmdb
         if tmdb.get("title"):
             item["display_title"] = tmdb["title"]
-    if local:
-        meta["local"] = local
-        if local.get("douban"):
-            meta["douban"] = local["douban"]
     item["metadata"] = meta
     return item

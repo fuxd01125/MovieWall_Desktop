@@ -79,11 +79,29 @@ def parse_season_number(text: str):
     return 1
 
 
+_CN_NUM = {"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"十":10}
+
 def parse_episode_number(text: str):
-    m = re.search(r"[Ss]\d{1,2}[Ee](\d{1,3})", str(text))
+    s = str(text)
+    m = re.search(r"[Ss]\d{1,2}[Ee](\d{1,3})", s)
     if m:
         return int(m.group(1))
-    m = re.search(r"[Ee](\d{1,3})", str(text))
+    m = re.search(r"[Ee](\d{1,3})", s)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"[Tt]ape[.\s]*(\d{1,3})", s)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"第\s*(\d{1,3})\s*[话集章回]", s)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\b[Pp](?:art)?\s*(\d{1,3})\b", s)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"第\s*([一二三四五六七八九十]+)\s*[话集章回]", s)
+    if m:
+        return _CN_NUM.get(m.group(1), 0)
+    m = re.search(r"\b(\d{1,3})\s*[话集章回]", s)
     if m:
         return int(m.group(1))
     return 0

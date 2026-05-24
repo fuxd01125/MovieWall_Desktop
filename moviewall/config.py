@@ -13,7 +13,6 @@ APP_DIR = runtime_dir()
 CONFIG_FILE = APP_DIR / "config.json"
 LIBRARY_FILE = APP_DIR / "library.json"
 METADATA_CACHE_FILE = APP_DIR / "metadata_cache.json"
-LOCAL_METADATA_FILE = APP_DIR / "local_metadata.json"
 RATINGS_FILE = APP_DIR / "ratings.json"
 HISTORY_FILE = APP_DIR / "history.json"
 

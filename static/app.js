@@ -69,7 +69,6 @@ function escapeJs(s) {
 }
 function titleOf(item) { return item?.display_title || item?.title || item?.filename || "未命名"; }
 function tmdb(item) { return item?.metadata?.tmdb || {}; }
-function douban(item) { return item?.metadata?.douban || {}; }
 
 function artworkUrl(item, kind="poster") {
   if (!item) return "";
@@ -133,11 +132,9 @@ function ratingWidget(item) {
 }
 
 function metaBadges(item) {
-  const t = tmdb(item), d = douban(item), bits = [];
-  // 卡片信息行只显示媒体信息，不混入“我的评分”。
+  const t = tmdb(item), bits = [];
   if (item?.year) bits.push(`<span class="badge">${escapeHtml(item.year)}</span>`);
   if (t.rating) bits.push(`<span class="badge hot">TMDB ${Number(t.rating).toFixed(1)}</span>`);
-  if (d.rating) bits.push(`<span class="badge hot">豆瓣 ${escapeHtml(d.rating)}</span>`);
   if (t.genres?.length) bits.push(...t.genres.slice(0, 3).map(g => `<span class="badge">${escapeHtml(g)}</span>`));
   if (item?.type === "show") bits.push(`<span class="badge">${item.season_count || 0} 季</span><span class="badge">${item.episode_count || 0} 集</span>`);
   return bits.join("");
