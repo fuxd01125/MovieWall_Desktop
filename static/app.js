@@ -6,6 +6,7 @@ let navStack = [];
 const app = document.querySelector("#app");
 const tabs = document.querySelector("#tabs");
 const search = document.querySelector("#search");
+const typeFilter = document.querySelector("#typeFilter");
 const scanBtn = document.querySelector("#scanBtn");
 
 const ratingEditMode = {};
@@ -131,6 +132,13 @@ function ratingWidget(item) {
   </div>`;
 }
 
+function highlightText(text, query) {
+  if (!query) return escapeHtml(text);
+  const escaped = escapeHtml(text);
+  const q = escapeHtml(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escaped.replace(new RegExp('(' + q + ')', 'gi'), '<mark>$1</mark>');
+}
+
 function metaBadges(item) {
   const t = tmdb(item), bits = [];
   if (item?.year) bits.push(`<span class="badge">${escapeHtml(item.year)}</span>`);
@@ -206,8 +214,10 @@ function setCategory(key) {
 
 function getFilteredItems() {
   const q = search.value.trim().toLowerCase();
+  const tf = typeFilter.value;
   return library.items.filter(item => {
     if (activeCategory !== "all" && item.category_key !== activeCategory) return false;
+    if (tf !== "all" && item.type !== tf) return false;
     if (!q) return true;
     let bag = `${titleOf(item)} ${item.title} ${item.year} ${item.category_name}`.toLowerCase();
     if (item.type === "movie") bag += ` ${item.filename} ${item.folder}`.toLowerCase();
@@ -247,9 +257,10 @@ function renderContinueCard(last) {
 }
 
 function renderHomeCard(item) {
+  const q = search.value.trim();
   const hist = getItemHistory(item);
   const subtitle = item.type === "movie" ? `${item.category_name}${item.year ? " · " + item.year : ""}` : `${item.category_name}${item.year ? " · " + item.year : ""} · ${item.season_count || 0} 季 · ${item.episode_count || 0} 集`;
-  return `<article class="card" onclick="openDetail('${item.id}')">${imgOrPlaceholder(item, "poster", "poster")}<div class="card-body"><h4 class="card-title">${escapeHtml(titleOf(item))}</h4><div class="meta">${escapeHtml(subtitle)}</div><div class="rating-row">${metaBadges(item)}</div>${hist ? `<div class="progress-pill">上次播放到 ${escapeHtml(hist.short_label || hist.label || "")}</div>` : ""}</div></article>`;
+  return `<article class="card" onclick="openDetail('${item.id}')">${imgOrPlaceholder(item, "poster", "poster")}<div class="card-body"><h4 class="card-title">${highlightText(titleOf(item), q)}</h4><div class="meta">${escapeHtml(subtitle)}</div><div class="rating-row">${metaBadges(item)}</div>${hist ? `<div class="progress-pill">上次播放到 ${escapeHtml(hist.short_label || hist.label || "")}</div>` : ""}</div></article>`;
 }
 
 function openDetail(id) { navigateTo({type:"detail", id}); }
@@ -450,5 +461,6 @@ scanBtn.onclick = async () => {
 };
 
 search.addEventListener("input", () => { navStack = []; renderHome(); });
+typeFilter.addEventListener("change", () => { navStack = []; renderHome(); });
 window.addEventListener("keydown", e => { if (e.key === "Escape" && currentView.type !== "home") goBackSmart(); });
 loadLibrary();

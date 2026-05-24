@@ -68,7 +68,8 @@ def register_routes(app):
 
     @app.route("/api/scan", methods=["POST"])
     def api_scan():
-        return jsonify(scan_library())
+        force = request.args.get("force") == "1" or (request.get_json(silent=True) or {}).get("force")
+        return jsonify(scan_library(force=force))
 
     @app.route("/api/artwork/<media_id>/<kind>")
     def api_artwork(media_id, kind):
