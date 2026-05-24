@@ -1,31 +1,29 @@
 :root {
-  --bg:#07080b;
-  --panel:#121722;
-  --panel2:#1b2230;
-  --line:rgba(255,255,255,.09);
-  --text:#f5f7fb;
-  --muted:#9ea8bb;
-  --accent:#f5c451;
-  --accent2:#7b9aff;
-  --good:#62d394;
-  --radius:20px;
-  --radius-lg:28px;
+  --bg: #141414;
+  --panel: #1f1f1f;
+  --panel2: #2a2a2a;
+  --line: rgba(255,255,255,.08);
+  --text: #f5f7fb;
+  --muted: #9ca3af;
+  --accent: #f5c518;
+  --accent2: #e50914;
+  --good: #3ddc84;
+  --radius: 8px;
+  --radius-lg: 12px;
 }
 
-*{
-  box-sizing:border-box
-}
+*{box-sizing:border-box}
 
 body{
   margin:0;
   min-height:100vh;
+  background:var(--bg);
   color:var(--text);
-  font-family:"Microsoft YaHei","Segoe UI",system-ui,sans-serif;
-  background:
-    radial-gradient(circle at 12% 0%,rgba(245,196,81,.13),transparent 32%),
-    radial-gradient(circle at 85% 10%,rgba(105,137,255,.14),transparent 34%),
-    linear-gradient(180deg,#08090d 0%,#0b0e15 42%,#07080b 100%)
+  font-family:"Inter","PingFang SC","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased
 }
+
+/* ===== Header ===== */
 
 .app-header{
   position:sticky;
@@ -34,9 +32,9 @@ body{
   display:flex;
   justify-content:space-between;
   align-items:center;
-  padding:10px 20px;
-  min-height:52px;
-  background:rgba(7,8,11,.82);
+  padding:10px 24px;
+  min-height:56px;
+  background:rgba(20,20,20,.85);
   backdrop-filter:blur(18px);
   border-bottom:1px solid var(--line);
   gap:12px
@@ -50,20 +48,15 @@ body{
   min-width:0
 }
 
-.brand{
-  cursor:pointer;
-  flex:none
-}
+.brand{cursor:pointer;flex:none}
 
 .logo{
-  width:32px;
-  height:32px;
-  display:grid;
-  place-items:center;
-  border-radius:10px;
+  width:34px;height:34px;
+  display:grid;place-items:center;
+  border-radius:var(--radius);
   color:#111;
   font-weight:950;
-  font-size:14px;
+  font-size:15px;
   background:linear-gradient(135deg,var(--accent),#ffe2a0)
 }
 
@@ -76,21 +69,12 @@ body{
   overflow:hidden;
   white-space:nowrap
 }
-.bc-item{
-  color:var(--muted);
-  cursor:pointer;
-  flex-shrink:0
-}
+.bc-item{color:var(--muted);cursor:pointer;flex-shrink:0}
 .bc-item:hover{color:var(--text)}
 .bc-current{color:var(--text);font-weight:700;overflow:hidden;text-overflow:ellipsis}
 .bc-sep{color:var(--line);flex-shrink:0;font-size:11px}
 
-.tools{
-  display:flex;
-  gap:6px;
-  align-items:center;
-  flex:none
-}
+.tools{display:flex;gap:6px;align-items:center;flex:none}
 
 input{
   width:min(28vw,260px);
@@ -98,15 +82,16 @@ input{
   color:var(--text);
   background:rgba(255,255,255,.06);
   border:1px solid var(--line);
-  border-radius:12px;
+  border-radius:var(--radius);
   outline:none;
   font-size:13px
 }
+input:focus{border-color:rgba(245,197,24,.4)}
 
 button, select{
   border:0;
   cursor:pointer;
-  border-radius:10px;
+  border-radius:var(--radius);
   padding:8px 12px;
   color:#111;
   font-weight:800;
@@ -121,243 +106,218 @@ select{
   background:rgba(255,255,255,.1);
   border:1px solid var(--line)
 }
-select option{
-  color:#111;
-  background:#fff
-}
+select option{color:#111;background:#fff}
 
 button.ghost{
   color:var(--text);
   background:rgba(255,255,255,.08);
   border:1px solid var(--line)
 }
+button.ghost:hover{background:rgba(255,255,255,.14)}
 
 main{
-  padding:18px 34px 56px
+  padding:24px 32px 56px;
+  animation:fadeUp .25s ease
+}
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(12px)}
+  to{opacity:1;transform:translateY(0)}
 }
 
-.section{
-  margin-top:22px
-}
+/* ===== Sections ===== */
 
-.section:first-child{
-  margin-top:0
-}
+.section{margin-top:32px}
+.section:first-child{margin-top:0}
 
-.section-head{
+.section-header{
   display:flex;
-  justify-content:space-between;
+  align-items:center;
   gap:12px;
-  align-items:end;
-  margin-bottom:10px
+  margin-bottom:16px
 }
-
-.section h2{
+.section-header h2{
   margin:0;
-  font-size:22px
+  font-size:20px;
+  font-weight:700;
+  letter-spacing:-.3px
+}
+.section-header small{
+  color:var(--muted);
+  font-size:13px
 }
 
-.section small{
-  color:var(--muted)
+/* ===== Grids ===== */
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+  gap:16px
 }
 
-/* =========================
-   影视墙布局（已修复自动换行）
-========================= */
+.continue-strip{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+  gap:16px
+}
 
-.home-strip,
-.rail,
 .season-wall{
   display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
-  gap:14px;
-  width:100%;
-  overflow:hidden;
-  padding:2px 2px 14px
-}
-.season-wall{
   grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
   gap:12px
 }
 
-.home-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
-  gap:16px
-}
-
-.episode-wall{
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(278px,1fr));
-  gap:18px
-}
+/* ===== Card Base ===== */
 
 .card{
-  min-width:0;
-  overflow:hidden;
   border-radius:var(--radius);
-  background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035));
-  border:1px solid var(--line);
-  box-shadow:0 18px 45px rgba(0,0,0,.22);
+  background:var(--panel);
+  overflow:hidden;
   cursor:pointer;
-  transition:transform .22s cubic-bezier(.34,1.56,.64,1),border-color .22s,box-shadow .22s
+  transition:transform .25s cubic-bezier(.34,1.56,.64,1),box-shadow .25s ease
 }
-
 .card:hover{
-  transform:scale(1.03);
-  border-color:rgba(245,196,81,.55);
-  box-shadow:0 14px 40px rgba(245,196,81,.12),0 18px 45px rgba(0,0,0,.22)
+  transform:translateY(-4px);
+  box-shadow:0 8px 30px rgba(0,0,0,.5)
 }
 
-.continue-inline-card{
-  border-color:rgba(245,196,81,.42)
-}
+/* ===== Card Poster ===== */
 
-.cover{
+.card-poster{
   position:relative;
-  aspect-ratio:16/9;
+  aspect-ratio:2/3;
   overflow:hidden;
   background:var(--panel2)
 }
-
-.cover.poster{
-  aspect-ratio:2/3
-}
-
-.cover img{
+.card-poster img{
   width:100%;
   height:100%;
   object-fit:cover;
-  display:block
+  display:block;
+  animation:imgFade .35s ease
 }
+@keyframes imgFade{from{opacity:0}to{opacity:1}}
 
 .placeholder{
-  width:100%;
-  height:100%;
-  display:grid;
-  place-items:center;
-  padding:18px;
-  text-align:center;
-  font-weight:950;
-  font-size:22px;
-  line-height:1.2;
-  background:
-    linear-gradient(135deg,rgba(245,196,81,.28),transparent 48%),
-    linear-gradient(225deg,rgba(138,180,255,.22),transparent 46%),
-    #202735
+  width:100%;height:100%;
+  display:grid;place-items:center;
+  padding:18px;text-align:center;
+  font-weight:950;font-size:22px;line-height:1.2;
+  background:linear-gradient(135deg,rgba(245,196,81,.28),transparent 48%),linear-gradient(225deg,rgba(138,180,255,.22),transparent 46%),var(--panel2)
 }
+.episode-placeholder{font-size:16px}
 
-.episode-placeholder{
-  font-size:18px;
-  background:
-    linear-gradient(135deg,rgba(138,180,255,.24),transparent 48%),
-    linear-gradient(225deg,rgba(245,196,81,.18),transparent 46%),
-    #1c2432
-}
+/* ===== Card Overlay (hover) ===== */
 
-.overlay-play{
+.card-overlay{
   position:absolute;
-  right:12px;
-  bottom:12px;
-  display:grid;
-  place-items:center;
-  width:42px;
-  height:42px;
-  border-radius:999px;
-  color:#111;
-  background:rgba(245,196,81,.95);
-  font-weight:950;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+  padding:14px;
+  background:linear-gradient(rgba(0,0,0,.05) 40%,rgba(0,0,0,.85) 100%);
   opacity:0;
-  transform:translateY(8px);
-  transition:.18s
+  transition:opacity .25s ease
+}
+.card:hover .card-overlay{opacity:1}
+
+.card-meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-bottom:10px
+}
+.card-meta .tag{
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:600;
+  background:rgba(255,255,255,.12);
+  color:var(--text)
+}
+.card-meta .rating{
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:700;
+  background:rgba(245,197,24,.2);
+  color:var(--accent)
 }
 
-.card:hover .overlay-play{
-  opacity:1;
-  transform:translateY(0)
+.card-play-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:8px 16px;
+  border:0;
+  border-radius:var(--radius);
+  background:var(--accent);
+  color:#111;
+  font-weight:800;
+  font-size:13px;
+  cursor:pointer;
+  transition:transform .15s,box-shadow .15s
+}
+.card-play-btn:hover{
+  transform:scale(1.05);
+  box-shadow:0 4px 15px rgba(245,197,24,.35)
 }
 
-.card-body{
-  padding:10px 11px 11px
-}
+/* ===== Card Body ===== */
+
+.card-body{padding:10px 12px 12px}
 
 .card-title{
   margin:0;
-  min-height:38px;
   font-size:14px;
-  line-height:1.35;
-  display:-webkit-box;
-  -webkit-line-clamp:2;
-  -webkit-box-orient:vertical;
-  overflow:hidden
-}
-.season-wall .card-title{
-  min-height:20px;
-  font-size:13px
+  font-weight:600;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  line-height:1.4
 }
 
-.meta{
-  margin-top:6px;
-  color:var(--muted);
-  font-size:12px;
-  line-height:1.45
-}
+/* ===== Card Progress Bar ===== */
 
-.rating-row{
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-  margin-top:8px
+.card-progress{
+  position:absolute;
+  bottom:0;
+  left:0;
+  right:0;
+  height:3px;
+  background:rgba(255,255,255,.1)
 }
-
-.badge{
-  display:inline-flex;
-  border-radius:999px;
-  padding:6px 9px;
-  color:var(--text);
-  background:rgba(255,255,255,.09);
-  border:1px solid var(--line);
-  font-size:12px
-}
-
-.badge.hot,
-.badge.mine{
-  color:#111;
+.card-progress-bar{
+  height:100%;
   background:var(--accent);
-  border-color:transparent;
-  font-weight:950
+  transition:width .4s ease
 }
+.card-progress-bar.ended{background:var(--good)}
 
-.progress-pill{
-  display:inline-flex;
-  margin-top:8px;
-  border-radius:999px;
-  padding:6px 9px;
-  color:#101318;
-  background:var(--good);
-  font-size:11px;
-  font-weight:900
-}
+/* ===== Continue Kicker ===== */
 
 .continue-kicker{
   display:inline-flex;
-  margin-bottom:7px;
-  padding:5px 8px;
+  align-items:center;
+  gap:4px;
+  margin-bottom:6px;
+  padding:3px 8px;
   border-radius:999px;
-  color:#111;
-  background:var(--accent);
+  background:rgba(245,197,24,.15);
+  color:var(--accent);
   font-size:11px;
-  font-weight:950
+  font-weight:700
 }
+
+/* ===== Detail Hero ===== */
 
 .detail-hero{
   position:relative;
-  min-height:340px;
+  min-height:360px;
   overflow:hidden;
   border-radius:var(--radius-lg);
   border:1px solid var(--line);
-  background:#141821;
-  box-shadow:0 28px 70px rgba(0,0,0,.28)
+  background:#1a1a1a
 }
 
 .detail-backdrop{
@@ -365,303 +325,325 @@ main{
   inset:0;
   background-size:cover;
   background-position:center;
-  opacity:.42;
+  opacity:.35;
   transition:transform .5s ease,opacity .5s
 }
-.detail-hero:hover .detail-backdrop{
-  transform:scale(1.04);
-  opacity:.52
+.detail-hero:hover .detail-backdrop{transform:scale(1.04);opacity:.45}
+
+.detail-overlay{
+  position:absolute;
+  inset:0;
+  background:linear-gradient(100deg,rgba(20,20,20,.97) 0%,rgba(20,20,20,.7) 40%,rgba(20,20,20,.3) 70%,rgba(20,20,20,.1) 100%);
+  z-index:1;
+  pointer-events:none
 }
 
 .detail-content{
   position:relative;
   z-index:2;
   display:grid;
-  grid-template-columns:minmax(160px,220px) 1fr;
-  gap:24px;
+  grid-template-columns:minmax(150px,200px) 1fr;
+  gap:28px;
   align-items:end;
-  min-height:340px;
-  padding:28px
+  min-height:360px;
+  padding:32px
 }
 
 .detail-poster{
   overflow:hidden;
-  border-radius:26px;
+  border-radius:var(--radius);
   border:1px solid var(--line);
   background:var(--panel);
-  aspect-ratio:2/3
+  aspect-ratio:2/3;
+  box-shadow:0 4px 20px rgba(0,0,0,.4)
 }
-
 .detail-poster img{
-  width:100%;
-  height:100%;
-  object-fit:cover
+  width:100%;height:100%;object-fit:cover
 }
 
-.detail-info h2{
-  margin:10px 0 0;
-  font-size:clamp(28px,4vw,52px);
-  letter-spacing:-1px;
-  line-height:1.04
+.detail-info{min-width:0}
+
+.detail-info h1{
+  margin:0;
+  font-size:clamp(24px,3.5vw,42px);
+  font-weight:800;
+  letter-spacing:-.5px;
+  line-height:1.1
 }
+
 .detail-subtitle{
   color:var(--muted);
-  font-size:15px;
+  font-size:14px;
   margin-top:4px
 }
 
-.overview-wrap{
-  position:relative;
-  margin-top:16px
+.detail-primary-meta{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:10px;
+  margin-top:10px
 }
+.detail-primary-meta .year{color:var(--muted);font-size:14px}
+.detail-primary-meta .rating-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  padding:2px 10px;
+  border-radius:999px;
+  font-size:13px;
+  font-weight:700;
+  background:rgba(245,197,24,.15);
+  color:var(--accent)
+}
+
+.genre-tags{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:12px
+}
+.genre-tag{
+  padding:4px 12px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:500;
+  background:rgba(255,255,255,.08);
+  color:var(--muted);
+  border:1px solid var(--line)
+}
+
+.overview-wrap{position:relative;margin-top:14px}
 .overview{
   max-width:1260px;
-  color:#d4dae6;
-  line-height:1.75;
+  color:var(--muted);
+  font-size:14px;
+  line-height:1.7;
   display:-webkit-box;
-  -webkit-line-clamp:4;
+  -webkit-line-clamp:3;
   -webkit-box-orient:vertical;
   overflow:hidden;
   transition:all .3s
 }
-.overview.expanded{
-  -webkit-line-clamp:unset;
-  display:block
-}
+.overview.expanded{-webkit-line-clamp:unset;display:block}
 .expand-btn{
-  margin-top:8px;
-  padding:5px 12px;
+  margin-top:6px;
+  padding:4px 10px;
   font-size:12px;
-  font-weight:700;
+  font-weight:600;
   border-radius:999px;
   color:var(--accent);
-  background:rgba(245,196,81,.12);
-  border:1px solid rgba(245,196,81,.25);
+  background:rgba(245,196,81,.1);
+  border:1px solid rgba(245,196,81,.2);
   cursor:pointer;
   transition:.18s
 }
-.expand-btn:hover{
-  background:rgba(245,196,81,.22)
-}
+.expand-btn:hover{background:rgba(245,196,81,.2)}
 
-.detail-actions,
-.episode-actions,
-.mini-actions{
+/* ===== Detail Action Bar ===== */
+
+.detail-actions{
   display:flex;
   flex-wrap:wrap;
-  gap:8px;
-  margin-top:14px
+  gap:10px;
+  margin-top:18px
 }
 
-.episode-actions,
-.mini-actions{
-  display:grid;
-  grid-template-columns:1fr 1fr
+.cta-btn{
+  padding:10px 24px;
+  font-size:14px;
+  font-weight:800;
+  background:var(--accent);
+  color:#111;
+  border:0;
+  border-radius:var(--radius);
+  cursor:pointer;
+  transition:transform .15s,box-shadow .15s
 }
-
-.episode-wall .cover,
-.episode-card .cover{
-  aspect-ratio:16/9!important
+.cta-btn:hover{
+  transform:scale(1.03);
+  box-shadow:0 4px 15px rgba(245,197,24,.3)
 }
-
-.user-rating-panel{
-  margin-top:16px;
-  max-width:560px;
-  padding:14px;
-  border:1px solid var(--line);
-  border-radius:18px;
-  background:rgba(255,255,255,.07)
-}
-
-.user-rating-head{
-  display:flex;
-  justify-content:space-between;
-  gap:12px;
-  margin-bottom:10px
-}
-
-.user-rating-head span{
-  color:var(--muted);
-  font-size:13px
-}
-
-.rating-buttons{
-  display:grid;
-  grid-template-columns:repeat(10,minmax(32px,1fr));
-  gap:6px
-}
-
-.rating-btn{
-  padding:8px 0;
-  border-radius:10px;
+.cta-btn.secondary{
+  background:transparent;
   color:var(--text);
-  background:rgba(255,255,255,.09);
   border:1px solid var(--line)
 }
-
-.rating-btn.active{
-  color:#111;
-  background:var(--accent);
-  border-color:transparent;
-  font-weight:950
+.cta-btn.secondary:hover{
+  background:rgba(255,255,255,.08);
+  border-color:var(--muted)
 }
 
-.rating-clear{
-  margin-top:10px;
-  padding:8px 12px
-}
+/* ===== Season Wall ===== */
 
-.empty{
-  padding:38px;
-  text-align:center;
-  color:var(--muted);
-  border:1px dashed var(--line);
-  border-radius:24px;
-  background:rgba(255,255,255,.04)
-}
+.season-card .card-poster{aspect-ratio:2/3}
+.season-card .card-body{padding:8px 10px 10px}
+.season-card .card-title{font-size:13px}
+.season-card .season-meta{font-size:12px;color:var(--muted);margin-top:2px}
 
-@media(max-width:900px){
-
-  .app-header{
-    flex-wrap:wrap;
-    padding:10px 14px
-  }
-
-  .header-left{
-    width:100%
-  }
-
-  .tools{
-    width:100%;
-    justify-content:flex-end
-  }
-
-  input{
-    flex:1;
-    min-width:80px
-  }
-
-  main{
-    padding:14px
-  }
-
-  .home-strip,
-  .rail,
-  .season-wall,
-  .home-grid{
-    grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
-    gap:10px
-  }
-
-  .detail-content{
-    grid-template-columns:1fr;
-    min-height:auto;
-    padding:20px
-  }
-
-  .detail-poster{
-    max-width:180px
-  }
-
-  .episode-wall{
-    grid-template-columns:1fr
-  }
-
-  .season-wall{
-    grid-template-columns:repeat(auto-fill,minmax(120px,1fr))
-  }
-}
-
-/* V13: improved rating interaction */
-
-.user-rating-summary{
-  margin-top:16px;
-  display:inline-flex;
-  align-items:center;
-  gap:10px;
-  padding:10px 12px;
-  border-radius:18px;
-  border:1px solid rgba(245,196,81,.38);
-  background:rgba(245,196,81,.10)
-}
-
-.my-rating-value{
-  border:0;
-  cursor:pointer;
-  color:#111;
-  background:linear-gradient(135deg,var(--accent),#ffe6aa);
+.season-progress{
+  height:3px;
+  margin-top:6px;
   border-radius:999px;
-  padding:8px 12px;
-  font-weight:950
+  background:rgba(255,255,255,.08);
+  overflow:hidden
+}
+.season-progress-bar{
+  height:100%;
+  border-radius:999px;
+  background:var(--accent);
+  transition:width .4s
 }
 
-.rating-edit{
-  padding:8px 12px
-}
+.season-expanded{border:1px solid rgba(245,197,24,.3)}
 
-.rating-panel-actions{
+/* ===== Inline Episodes ===== */
+
+.inline-episodes{
+  margin-top:16px;
+  padding:16px;
+  border-radius:var(--radius);
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--line)
+}
+.inline-episodes-head{
   display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-  margin-top:10px
-}
-
-.rating-panel-actions button{
-  padding:8px 12px
-}
-
-.badge.mine{
-  letter-spacing:.2px
-}
-
-.card .rating-row:empty{
-  display:none
-}
-
-.settings-cat-row{
-  display:flex;
-  gap:10px;
   align-items:center;
-  margin-bottom:10px
-}
-.settings-cat-row input,.settings-cat-row select{
-  flex:1;
-  min-width:0
-}
-.settings-cat-row button{
-  flex:none;
-  padding:8px 12px
-}
-.settings-hint{
-  color:var(--muted);
-  font-size:13px;
-  margin:0 0 14px
-}
-.settings-actions{
-  display:flex;
   gap:10px;
-  margin-top:16px
+  margin-bottom:12px;
+  font-size:13px;
+  font-weight:600;
+  color:var(--muted)
 }
 
-mark{
-  background:transparent;
-  color:var(--accent);
-  font-weight:950
+/* ===== Episode List (Compact Rows) ===== */
+
+.episode-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px
 }
 
-/* ===== 星级评分 ===== */
+.episode-row{
+  display:grid;
+  grid-template-columns:160px 1fr;
+  gap:12px;
+  padding:8px;
+  border-radius:var(--radius);
+  cursor:pointer;
+  transition:background .2s
+}
+.episode-row:hover{background:rgba(255,255,255,.05)}
+
+.episode-row.active-episode{border-left:3px solid var(--accent);padding-left:5px}
+
+.episode-row-thumb{
+  position:relative;
+  aspect-ratio:16/9;
+  border-radius:4px;
+  overflow:hidden;
+  background:var(--panel2);
+  flex-shrink:0
+}
+.episode-row-thumb img{
+  width:100%;height:100%;object-fit:cover
+}
+.episode-row-thumb .play-indicator{
+  position:absolute;
+  inset:0;
+  display:grid;place-items:center;
+  background:rgba(0,0,0,.4);
+  opacity:0;
+  transition:opacity .2s
+}
+.episode-row:hover .play-indicator{opacity:1}
+.episode-row-thumb .play-indicator span{
+  font-size:28px;color:#fff
+}
+
+.episode-row-body{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:2px
+}
+.episode-row-title{
+  font-size:13px;
+  font-weight:600;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis
+}
+.episode-row-meta{
+  font-size:12px;
+  color:var(--muted);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis
+}
+.episode-row-overview{
+  font-size:12px;
+  color:var(--muted);
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+  line-height:1.5
+}
+.episode-row-actions{
+  display:flex;
+  gap:6px;
+  margin-top:4px
+}
+.episode-row-actions button{
+  padding:4px 10px;
+  font-size:11px;
+  font-weight:600
+}
+
+.episode-row-progress{
+  height:2px;
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+  overflow:hidden;
+  margin-top:4px
+}
+.episode-row-progress-bar{
+  height:100%;
+  border-radius:999px;
+  background:var(--accent)
+}
+
+/* ===== Detail Episode List ===== */
+
+.detail-episode-list{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  margin-top:16px;
+  padding:0 4px
+}
+.detail-episode-list .episode-row{
+  grid-template-columns:140px 1fr;
+  padding:6px 8px
+}
+.detail-episode-list .episode-row-thumb{border-radius:4px}
+
+/* ===== Star Rating ===== */
+
 .star-rating{
   display:inline-flex;
   align-items:center;
   gap:4px;
   margin-top:14px;
-  padding:10px 14px;
-  border-radius:14px;
-  background:rgba(255,255,255,.06);
+  padding:8px 12px;
+  border-radius:var(--radius);
+  background:rgba(255,255,255,.04);
   border:1px solid var(--line)
 }
 .star{
-  font-size:24px;
+  font-size:22px;
   cursor:pointer;
   transition:transform .15s,color .15s;
   line-height:1
@@ -671,7 +653,7 @@ mark{
 .star-half{color:var(--accent);position:relative}
 .star-half:after{content:"☆";position:absolute;left:0;top:0;color:var(--muted);clip-path:inset(0 50% 0 0)}
 .star-empty{color:var(--muted)}
-.star-score{font-size:18px;font-weight:950;color:var(--accent);margin-left:6px;min-width:28px}
+.star-score{font-size:16px;font-weight:800;color:var(--accent);margin-left:6px;min-width:28px}
 .star-hint{font-size:12px;color:var(--muted);margin-left:6px}
 .star-clear{
   margin-left:6px;
@@ -685,7 +667,56 @@ mark{
 }
 .star-clear:hover{color:var(--text);background:rgba(255,255,255,.15)}
 
-/* ===== 更多菜单 ===== */
+/* ===== User Rating Panel ===== */
+
+.user-rating-panel{
+  margin-top:16px;
+  max-width:560px;
+  padding:14px;
+  border:1px solid var(--line);
+  border-radius:var(--radius-lg);
+  background:rgba(255,255,255,.04)
+}
+.user-rating-head{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:10px
+}
+.user-rating-head span{color:var(--muted);font-size:13px}
+.rating-buttons{
+  display:grid;
+  grid-template-columns:repeat(10,minmax(32px,1fr));
+  gap:6px
+}
+.rating-btn{
+  padding:8px 0;
+  border-radius:var(--radius);
+  color:var(--text);
+  background:rgba(255,255,255,.09);
+  border:1px solid var(--line)
+}
+.rating-btn.active{
+  color:#111;
+  background:var(--accent);
+  border-color:transparent;
+  font-weight:950
+}
+.rating-clear{margin-top:10px;padding:8px 12px}
+
+/* ===== Empty State ===== */
+
+.empty{
+  padding:48px;
+  text-align:center;
+  color:var(--muted);
+  border:1px dashed var(--line);
+  border-radius:var(--radius-lg);
+  background:rgba(255,255,255,.03)
+}
+
+/* ===== More Menu ===== */
+
 .more-wrap{position:relative;display:inline-block}
 .more-btn{
   letter-spacing:2px;
@@ -700,7 +731,7 @@ mark{
   margin-top:6px;
   min-width:140px;
   padding:6px;
-  border-radius:12px;
+  border-radius:var(--radius);
   background:var(--panel2);
   border:1px solid var(--line);
   box-shadow:0 12px 40px rgba(0,0,0,.5);
@@ -711,7 +742,7 @@ mark{
   width:100%;
   text-align:left;
   padding:8px 12px;
-  border-radius:8px;
+  border-radius:6px;
   background:transparent;
   color:var(--text);
   font-weight:500;
@@ -719,89 +750,47 @@ mark{
 }
 .more-dropdown button:hover{background:rgba(255,255,255,.1)}
 
-/* ===== CTA 按钮 ===== */
-.cta-btn{
-  padding:10px 20px;
-  font-size:15px;
-  font-weight:950;
-  background:linear-gradient(135deg,var(--accent),#ffe2a0);
-  border-radius:14px
-}
+/* ===== Settings ===== */
 
-/* ===== 毛玻璃遮罩 ===== */
-.detail-overlay{
-  position:absolute;
-  inset:0;
-  background:linear-gradient(100deg,rgba(7,8,11,.97) 0%,rgba(7,8,11,.75) 35%,rgba(7,8,11,.35) 70%,rgba(7,8,11,.15) 100%);
-  z-index:1;
-  pointer-events:none
-}
-.detail-hero .detail-content{
-  z-index:2
-}
-.detail-hero:after{display:none}
-
-/* ===== 季进度条 ===== */
-.season-progress{
-  height:4px;
-  margin-top:8px;
-  border-radius:999px;
-  background:rgba(255,255,255,.08);
-  overflow:hidden
-}
-.season-progress-bar{
-  height:100%;
-  border-radius:999px;
-  background:var(--accent);
-  transition:width .4s
-}
-
-/* ===== 内联集列表 ===== */
-.inline-episodes{
-  margin-top:14px;
-  padding:14px;
-  border-radius:var(--radius);
-  background:rgba(255,255,255,.04);
-  border:1px solid var(--line)
-}
-.inline-episodes-head{
+.settings-cat-row{
+  display:flex;
+  gap:10px;
+  align-items:center;
   margin-bottom:10px
 }
-.season-card.season-expanded{
-  border-color:var(--accent);
-  box-shadow:0 0 20px rgba(245,196,81,.15)
-}
+.settings-cat-row input,.settings-cat-row select{flex:1;min-width:0}
+.settings-cat-row button{flex:none;padding:8px 12px}
+.settings-hint{color:var(--muted);font-size:13px;margin:0 0 14px}
+.settings-actions{display:flex;gap:10px;margin-top:16px}
 
-/* ===== 当前剧集高亮 ===== */
-.active-episode{
-  border-color:var(--good)
-}
+/* ===== Search Highlight ===== */
+
+mark{background:transparent;color:var(--accent);font-weight:800}
 
 /* ===== Toast ===== */
+
 .toast{
   position:fixed;
   bottom:40px;
   left:50%;
   transform:translateX(-50%) translateY(20px);
   z-index:999;
-  padding:14px 24px;
-  border-radius:16px;
+  padding:12px 22px;
+  border-radius:var(--radius);
   color:#111;
-  font-weight:900;
-  font-size:14px;
-  background:linear-gradient(135deg,var(--accent),#ffe2a0);
-  box-shadow:0 12px 40px rgba(0,0,0,.5);
+  font-weight:700;
+  font-size:13px;
+  background:var(--accent);
+  box-shadow:0 8px 30px rgba(0,0,0,.5);
   opacity:0;
   transition:opacity .3s,transform .3s;
   pointer-events:none;
   white-space:nowrap
 }
-.toast.show{
-  opacity:1;
-  transform:translateX(-50%) translateY(0)
-}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
-/* ===== Scan Progress Bar ===== */
+/* ===== Scan Progress ===== */
+
 .scan-bar{
   height:3px;
   background:var(--accent);
@@ -809,30 +798,25 @@ mark{
   transform-origin:left;
   transition:transform .3s
 }
-.scan-bar.active{
-  transform:scaleX(1);
-  animation:scanPulse 1.2s ease-in-out infinite
-}
-@keyframes scanPulse{
-  0%{opacity:1}
-  50%{opacity:.3}
-  100%{opacity:1}
-}
+.scan-bar.active{transform:scaleX(1);animation:scanPulse 1.2s ease-in-out infinite}
+@keyframes scanPulse{0%{opacity:1}50%{opacity:.3}100%{opacity:1}}
 
-/* ===== Page Transition ===== */
-main{
-  animation:fadeUp .25s ease
-}
-@keyframes fadeUp{
-  from{opacity:0;transform:translateY(14px)}
-  to{opacity:1;transform:translateY(0)}
-}
+/* ===== Responsive ===== */
 
-/* ===== Image Fade In ===== */
-.cover img{
-  animation:imgFade .35s ease
-}
-@keyframes imgFade{
-  from{opacity:0}
-  to{opacity:1}
+@media(max-width:900px){
+  .app-header{flex-wrap:wrap;padding:10px 14px}
+  .header-left{width:100%}
+  .tools{width:100%;justify-content:flex-end}
+  input{flex:1;min-width:80px}
+  main{padding:16px}
+
+  .grid,.continue-strip{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+  .season-wall{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px}
+
+  .detail-content{grid-template-columns:1fr;min-height:auto;padding:20px}
+  .detail-poster{max-width:140px}
+  .detail-hero{min-height:auto}
+
+  .episode-row{grid-template-columns:120px 1fr}
+  .detail-episode-list .episode-row{grid-template-columns:100px 1fr}
 }
