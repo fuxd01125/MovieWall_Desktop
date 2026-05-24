@@ -239,6 +239,9 @@ main{
 }
 .rating-badge.sm{padding:1px 7px;font-size:11px}
 .rating-badge.lg{padding:4px 14px;font-size:14px}
+.rating-badge.douban{background:rgba(66,183,42,.15);color:#42b72a}
+.rating-badge.tmdb{background:rgba(13,210,230,.12);color:#0dd2e6}
+.rating-badge.douban-count{background:rgba(255,255,255,.06);color:var(--muted);font-weight:500}
 
 /* ===== Card Progress ===== */
 
@@ -646,12 +649,16 @@ main{
 
 /* ===== Settings ===== */
 
+.settings-section{margin-top:24px;padding-top:24px;border-top:1px solid var(--line)}
+.settings-section:first-of-type{border-top:0;padding-top:0;margin-top:0}
+
 .settings-cat-row{
   display:flex;gap:10px;align-items:center;margin-bottom:10px
 }
 .settings-cat-row input,.settings-cat-row select{flex:1;min-width:0}
 .settings-cat-row button{flex:none;padding:8px 12px}
-.settings-hint{color:var(--muted);font-size:13px;margin:0 0 14px}
+.settings-hint{color:var(--muted);font-size:13px;margin:0 0 14px;line-height:1.6}
+.settings-hint code{background:rgba(255,255,255,.06);padding:2px 6px;border-radius:4px;font-size:12px;color:var(--text)}
 .settings-actions{display:flex;gap:10px;margin-top:16px}
 
 /* ===== Search Highlight ===== */

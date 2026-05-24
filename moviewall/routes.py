@@ -6,6 +6,8 @@ from pathlib import Path
 from flask import abort, jsonify, render_template, request, send_file
 
 from moviewall.config import load_config, load_library, read_ratings, write_ratings, read_history, write_history, read_favorites, write_favorites, load_players, normalize_categories, write_json, CONFIG_FILE
+from moviewall.douban import get_douban_metadata_by_id, set_douban_id_override
+from moviewall.metadata import attach_metadata
 from moviewall.scanner import scan_library
 
 
@@ -132,14 +134,15 @@ def register_routes(app):
             "library_root": cfg.get("library_root", ""),
         })
 
-    @app.route("/api/config", methods=["PUT"])
-    def api_update_config():
-        data = request.get_json(force=True)
-        if "categories" in data:
-            cfg = load_config()
-            cfg["categories"] = data["categories"]
-            write_json(CONFIG_FILE, cfg)
-        return jsonify({"ok": True})
+@app.route("/api/config", methods=["PUT"])
+def api_update_config():
+    data = request.get_json(force=True)
+    cfg = load_config()
+    for key in ("categories", "library_root", "players", "douban_enabled", "douban_id_overrides"):
+        if key in data:
+            cfg[key] = data[key]
+    write_json(CONFIG_FILE, cfg)
+    return jsonify({"ok": True})
 
     @app.route("/api/ratings", methods=["GET"])
     def api_get_ratings():
@@ -186,6 +189,51 @@ def register_routes(app):
         history = read_history()
         history.pop(media_id, None)
         write_history(history)
+        return jsonify({"ok": True})
+
+    @app.route("/api/metadata/douban/<media_id>", methods=["PUT"])
+    def api_set_douban_id(media_id):
+        data = request.get_json(force=True)
+        douban_id = data.get("douban_id", "").strip()
+        set_douban_id_override(media_id, douban_id)
+        item = find_media_by_id(media_id)
+        if item and douban_id:
+            douban = get_douban_metadata_by_id(douban_id)
+            if douban:
+                if "metadata" not in item:
+                    item["metadata"] = {}
+                item["metadata"]["douban"] = douban
+                if douban.get("synopsis") and item["metadata"].get("tmdb"):
+                    item["metadata"]["tmdb"]["overview"] = douban["synopsis"]
+                try:
+                    from moviewall.config import save_library, load_library
+                    lib = load_library()
+                    for i in lib.get("items", []):
+                        if i["id"] == media_id:
+                            i["metadata"] = item["metadata"]
+                            break
+                    save_library(lib)
+                except Exception:
+                    pass
+                return jsonify({"ok": True, "douban": douban})
+        return jsonify({"ok": True, "douban": None})
+
+    @app.route("/api/metadata/douban/<media_id>", methods=["DELETE"])
+    def api_clear_douban_id(media_id):
+        set_douban_id_override(media_id, "")
+        item = find_media_by_id(media_id)
+        if item and "metadata" in item and "douban" in item["metadata"]:
+            del item["metadata"]["douban"]
+            try:
+                from moviewall.config import save_library, load_library
+                lib = load_library()
+                for i in lib.get("items", []):
+                    if i["id"] == media_id:
+                        i["metadata"] = item["metadata"]
+                        break
+                save_library(lib)
+            except Exception:
+                pass
         return jsonify({"ok": True})
 
     @app.route("/api/favorites", methods=["GET"])

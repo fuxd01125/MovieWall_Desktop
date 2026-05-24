@@ -82,6 +82,7 @@ function escapeJs(s) {
 }
 function titleOf(item) { return item?.display_title || item?.title || item?.filename || "未命名"; }
 function tmdb(item) { return item?.metadata?.tmdb || {}; }
+function douban(item) { return item?.metadata?.douban || {}; }
 
 function artworkUrl(item, kind="poster") {
   if (!item) return "";
@@ -147,6 +148,25 @@ function renderRatingBadge(score, opts) {
   if (isNaN(num) || num <= 0) return '';
   const size = opts?.sm ? ' sm' : opts?.lg ? ' lg' : '';
   return '<span class="rating-badge' + size + '">★ ' + num.toFixed(1) + '</span>';
+}
+
+function renderDualRating(item) {
+  const t = tmdb(item);
+  const d = douban(item);
+  const tRating = t.rating || "";
+  const dRating = d.rating || "";
+  const dCount = d.rating_count || "";
+  let html = '';
+  if (dRating) {
+    html += '<span class="rating-badge douban">豆瓣 ' + Number(dRating).toFixed(1) + '</span>';
+  }
+  if (tRating) {
+    html += '<span class="rating-badge tmdb">TMDB ' + Number(tRating).toFixed(1) + '</span>';
+  }
+  if (dCount) {
+    html += '<span class="rating-badge douban-count">' + Number(dCount).toLocaleString() + ' 评</span>';
+  }
+  return html;
 }
 
 /* ===== Star Rating (user input) ===== */
@@ -297,10 +317,12 @@ function getContinueItems() {
 
 function renderCardOverlay(item) {
   const t = tmdb(item);
+  const d = douban(item);
   const genres = (t.genres || []).slice(0, 2);
   let metaHtml = '';
   if (item.year) metaHtml += '<span class="rating-badge sm">' + escapeHtml(item.year) + '</span>';
-  if (t.rating) metaHtml += renderRatingBadge(t.rating, {sm:true});
+  if (d.rating) metaHtml += '<span class="rating-badge sm douban">豆 ' + Number(d.rating).toFixed(1) + '</span>';
+  else if (t.rating) metaHtml += renderRatingBadge(t.rating, {sm:true});
   if (genres.length) metaHtml += genres.map(g => '<span class="rating-badge sm" style="background:rgba(255,255,255,.08);color:var(--muted);font-weight:500">' + escapeHtml(g) + '</span>').join('');
   return '<div class="card-overlay"><div class="card-meta">' + metaHtml + '</div><div class="card-play-btn" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')">▶ 详情</div></div>';
 }
@@ -478,10 +500,10 @@ function renderGenreTags(item) {
 }
 
 function renderPrimaryMeta(item) {
-  const t = tmdb(item);
   const parts = [];
   if (item.year) parts.push('<span class="year">' + escapeHtml(item.year) + '</span>');
-  if (t.rating) parts.push(renderRatingBadge(t.rating));
+  const dualHtml = renderDualRating(item);
+  if (dualHtml) parts.push(dualHtml);
   if (item.type === "show") {
     parts.push('<span class="year">' + (item.season_count || 0) + ' 季 · ' + (item.episode_count || 0) + ' 集</span>');
   }
@@ -511,7 +533,8 @@ function renderMovieDetail(item) {
   const origTitle = meta.original_title && meta.original_title !== titleOf(item) ? meta.original_title : "";
   const hist = getItemHistory(item);
   const entry = "{media_id:'" + item.id + "',type:'movie',path:'" + escapeJs(item.path) + "',title:'" + escapeJs(titleOf(item)) + "',show_title:'" + escapeJs(titleOf(item)) + "',label:'电影',short_label:'电影'}";
-  const more = moreMenuHtml(item, '<button onclick="openFolder(\'' + escapeJs(item.folder) + '\')">打开文件夹</button>');
+  const d = douban(item);
+  const more = moreMenuHtml(item, '<button onclick="openFolder(\'' + escapeJs(item.folder) + '\')">打开文件夹</button><button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(d.douban_id || "") + '\')">' + (d.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>');
 
   const body = '<h1>' + escapeHtml(titleOf(item)) + '</h1>'
     + (origTitle ? '<div class="detail-subtitle">' + escapeHtml(origTitle) + '</div>' : '')
@@ -537,7 +560,10 @@ function renderShowDetail(item) {
   const overview = meta.overview;
   const origTitle = meta.original_title && meta.original_title !== titleOf(item) ? meta.original_title : "";
   const hist = getItemHistory(item);
-  const more = moreMenuHtml(item, '<button onclick="openFolder(\'' + escapeJs(item.folder) + '\')">打开文件夹</button>');
+  const dd = douban(item);
+  const moreActions = '<button onclick="openFolder(\'' + escapeJs(item.folder) + '\')">打开文件夹</button>'
+    + '<button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(dd.douban_id || "") + '\')">' + (dd.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>';
+  const more = moreMenuHtml(item, moreActions);
   const firstEp = findFirstEpisode(item);
   const firstEntry = firstEp ? episodeEntry(item, firstEp.season, firstEp.ep, firstEp.season.title + " · " + firstEp.ep.title) : "";
 
@@ -718,6 +744,39 @@ function toggleOverview() {
 
 /* ===== Settings ===== */
 
+let settingDoubanId = "";
+let settingDoubanItemId = "";
+
+function openDoubanSetting(itemId, currentDoubanId) {
+  settingDoubanItemId = itemId;
+  settingDoubanId = currentDoubanId || "";
+  renderSettings();
+}
+
+async function saveDoubanId() {
+  const id = settingDoubanId.trim();
+  const itemId = settingDoubanItemId;
+  if (!itemId) return;
+  const res = await fetch("/api/metadata/douban/" + itemId, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({douban_id: id})});
+  const data = await res.json();
+  if (data.douban) {
+    showToast("豆瓣数据已更新");
+  } else if (id) {
+    showToast("未找到该豆瓣ID的数据", 3000);
+  } else {
+    showToast("已清除豆瓣ID");
+  }
+  settingDoubanItemId = "";
+  settingDoubanId = "";
+  renderRoute(currentView);
+}
+
+async function clearDoubanId(itemId) {
+  await fetch("/api/metadata/douban/" + itemId, {method:"DELETE"});
+  showToast("已清除豆瓣关联");
+  renderRoute(currentView);
+}
+
 function renderSettings() {
   navStack = [];
   currentView = {type:"home"};
@@ -725,7 +784,38 @@ function renderSettings() {
   renderBreadcrumb();
   const catKeys = Object.keys(categoriesConfig);
   const rows = catKeys.map((key, i) => '<div class="settings-cat-row"><input class="sc-folder" value="' + escapeHtml(key) + '" placeholder="文件夹名"><input class="sc-name" value="' + escapeHtml(categoriesConfig[key].name) + '" placeholder="显示名"><select class="sc-type"><option value="movie"' + (categoriesConfig[key].type === "movie" ? " selected" : "") + '>电影</option><option value="show"' + (categoriesConfig[key].type === "show" ? " selected" : "") + '>剧集</option></select><button class="ghost" onclick="this.closest(\'.settings-cat-row\').remove()">✕</button></div>').join("");
-  app.innerHTML = '<section class="section"><div class="section-header"><h2>分类管理</h2></div><p class="settings-hint">修改后点击保存将自动重新扫描。</p><div id="settingsCats">' + (rows || '<div class="empty">暂无分类</div>') + '</div><div class="settings-actions"><button onclick="addSettingsRow()">+ 添加分类</button><button onclick="saveSettings()">保存</button><button class="ghost" onclick="goHome()">取消</button></div></section>';
+
+  let doubanSection = '';
+  if (settingDoubanItemId) {
+    const item = findItem(settingDoubanItemId);
+    const itemName = item ? titleOf(item) : settingDoubanItemId;
+    doubanSection = '<div class="settings-section"><div class="section-header"><h2>豆瓣关联</h2></div>'
+      + '<p class="settings-hint">为 "' + escapeHtml(itemName) + '" 手动设置豆瓣 ID。可在豆瓣网页 URL 中找到，如 <code>https://movie.douban.com/subject/<strong>123456</strong>/</code></p>'
+      + '<div class="settings-cat-row"><input id="doubanIdInput" class="sc-folder" value="' + escapeHtml(settingDoubanId) + '" placeholder="输入豆瓣 ID 数字"><button onclick="saveDoubanId()">保存</button><button class="ghost" onclick="settingDoubanItemId=\'\';renderSettings()">取消</button></div>'
+      + '</div>';
+  }
+
+  app.innerHTML = '<section class="section">'
+    + '<div class="section-header"><h2>设置</h2></div>'
+
+    + doubanSection
+
+    + '<div class="settings-section"><div class="section-header"><h2>目录分类</h2></div>'
+    + '<p class="settings-hint">修改后点击保存将自动重新扫描。</p>'
+    + '<div id="settingsCats">' + (rows || '<div class="empty">暂无分类</div>') + '</div>'
+    + '<div class="settings-actions"><button onclick="addSettingsRow()">+ 添加分类</button></div></div>'
+
+    + '<div class="settings-section"><div class="section-header"><h2>关于</h2></div>'
+    + '<p class="settings-hint">MovieWall Desktop · 本地影视墙</p>'
+    + '</div>'
+
+    + '<div class="settings-actions"><button onclick="saveSettings()">保存并扫描</button><button class="ghost" onclick="goHome()">返回首页</button></div>'
+    + '</section>';
+
+  if (settingDoubanItemId) {
+    const inp = document.getElementById("doubanIdInput");
+    if (inp) setTimeout(() => inp.focus(), 100);
+  }
 }
 
 function addSettingsRow() {

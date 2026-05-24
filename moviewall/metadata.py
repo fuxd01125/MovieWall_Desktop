@@ -1,6 +1,6 @@
 import time
 
-from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE
+from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE, CONFIG_FILE
 from moviewall.utils import normalize_key, tmdb_request, tmdb_image
 
 
@@ -88,5 +88,23 @@ def attach_metadata(item):
             cfg = load_config()
             lang = cfg.get("tmdb_language", "zh-CN") or "zh-CN"
             attach_season_metadata(item, tmdb["tmdb_id"], lang)
+
+    if cfg.get("douban_enabled", True):
+        from moviewall.douban import get_douban_metadata, get_douban_metadata_by_id
+        douban_data = None
+        overrides = cfg.get("douban_id_overrides", {})
+        override_id = overrides.get(item.get("id", ""))
+        if override_id:
+            douban_data = get_douban_metadata_by_id(override_id)
+        else:
+            title_cn = tmdb.get("title", "") or item.get("title", "") if tmdb else item.get("title", "")
+            title_en = tmdb.get("original_title", "") if tmdb else ""
+            douban_data = get_douban_metadata(title_cn, title_en, item.get("year", ""), "movie" if item.get("type") == "movie" else "tv")
+
+        if douban_data:
+            meta["douban"] = douban_data
+            if douban_data.get("synopsis") and tmdb:
+                tmdb["overview"] = douban_data["synopsis"]
+
     item["metadata"] = meta
     return item
