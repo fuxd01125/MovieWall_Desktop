@@ -8,19 +8,20 @@
 </head>
 <body>
   <header class="app-header">
-    <div class="brand" onclick="goHome()">
-      <div class="logo">MW</div>
-      <h1>MovieWall</h1>
+    <div class="header-left">
+      <div class="brand" onclick="goHome()">
+        <div class="logo">MW</div>
+      </div>
+      <nav id="breadcrumb" class="breadcrumb"></nav>
     </div>
     <div class="tools">
-      <input id="search" placeholder="搜索电影 / 剧集 / 集数">
+      <input id="search" placeholder="搜索">
       <select id="typeFilter"><option value="all">全部</option><option value="movie">电影</option><option value="show">剧集</option></select>
-      <button id="scanBtn">扫描</button>
+      <button id="scanBtn" title="扫描">扫描</button>
       <button id="settingsBtn" onclick="renderSettings()" title="设置">⚙</button>
     </div>
   </header>
   <div id="scanBar" class="scan-bar"></div>
-  <nav id="tabs" class="tabs"></nav>
   <main id="app"></main>
   <script src="/static/app.js"></script>
 </body>

@@ -34,64 +34,89 @@ body{
   display:flex;
   justify-content:space-between;
   align-items:center;
-  gap:22px;
-  padding:18px 34px;
+  padding:10px 20px;
+  min-height:52px;
   background:rgba(7,8,11,.82);
   backdrop-filter:blur(18px);
-  border-bottom:1px solid var(--line)
-}
-
-.brand{
-  display:flex;
-  gap:14px;
-  align-items:center;
-  cursor:pointer
-}
-
-.logo{
-  width:44px;
-  height:44px;
-  display:grid;
-  place-items:center;
-  border-radius:16px;
-  color:#111;
-  font-weight:950;
-  background:linear-gradient(135deg,var(--accent),#ffe2a0)
-}
-
-h1{
-  margin:0;
-  font-size:28px
-}
-
-.tools{
-  display:flex;
+  border-bottom:1px solid var(--line);
   gap:12px
 }
 
+.header-left{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex:1;
+  min-width:0
+}
+
+.brand{
+  cursor:pointer;
+  flex:none
+}
+
+.logo{
+  width:32px;
+  height:32px;
+  display:grid;
+  place-items:center;
+  border-radius:10px;
+  color:#111;
+  font-weight:950;
+  font-size:14px;
+  background:linear-gradient(135deg,var(--accent),#ffe2a0)
+}
+
+.breadcrumb{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  min-width:0;
+  overflow:hidden;
+  white-space:nowrap
+}
+.bc-item{
+  color:var(--muted);
+  cursor:pointer;
+  flex-shrink:0
+}
+.bc-item:hover{color:var(--text)}
+.bc-current{color:var(--text);font-weight:700;overflow:hidden;text-overflow:ellipsis}
+.bc-sep{color:var(--line);flex-shrink:0;font-size:11px}
+
+.tools{
+  display:flex;
+  gap:6px;
+  align-items:center;
+  flex:none
+}
+
 input{
-  width:min(42vw,460px);
-  padding:13px 15px;
+  width:min(28vw,260px);
+  padding:8px 12px;
   color:var(--text);
   background:rgba(255,255,255,.06);
   border:1px solid var(--line);
-  border-radius:16px;
-  outline:none
+  border-radius:12px;
+  outline:none;
+  font-size:13px
 }
 
 button, select{
   border:0;
   cursor:pointer;
-  border-radius:16px;
-  padding:12px 16px;
+  border-radius:10px;
+  padding:8px 12px;
   color:#111;
-  font-weight:900;
+  font-weight:800;
+  font-size:13px;
   background:var(--accent)
 }
 select{
-  padding:12px 10px;
-  font-size:14px;
-  font-weight:700;
+  padding:8px 8px;
+  font-size:12px;
+  font-weight:600;
   color:var(--text);
   background:rgba(255,255,255,.1);
   border:1px solid var(--line)
@@ -103,38 +128,8 @@ select option{
 
 button.ghost{
   color:var(--text);
-  background:rgba(255,255,255,.1);
+  background:rgba(255,255,255,.08);
   border:1px solid var(--line)
-}
-
-.tabs{
-  position:sticky;
-  top:81px;
-  z-index:29;
-  display:flex;
-  gap:10px;
-  padding:12px 34px;
-  background:rgba(7,8,11,.74);
-  backdrop-filter:blur(16px);
-  border-bottom:1px solid var(--line);
-  overflow-x:auto
-}
-
-.tab{
-  border-radius:999px;
-  padding:9px 15px;
-  color:var(--muted);
-  background:rgba(255,255,255,.06);
-  border:1px solid var(--line);
-  white-space:nowrap;
-  cursor:pointer
-}
-
-.tab.active{
-  color:#111;
-  background:var(--accent);
-  border-color:transparent;
-  font-weight:950
 }
 
 main{
@@ -378,23 +373,14 @@ main{
   opacity:.52
 }
 
-.detail-hero:after{
-  content:"";
-  position:absolute;
-  inset:0;
-  background:
-    linear-gradient(90deg,rgba(7,8,11,.96),rgba(7,8,11,.72),rgba(7,8,11,.32)),
-    linear-gradient(0deg,rgba(7,8,11,.96),transparent 58%)
-}
-
 .detail-content{
   position:relative;
   z-index:2;
   display:grid;
-  grid-template-columns:minmax(175px,230px) 1fr;
-  gap:26px;
+  grid-template-columns:minmax(160px,220px) 1fr;
+  gap:24px;
   align-items:end;
-  min-height:360px;
+  min-height:340px;
   padding:28px
 }
 
@@ -537,53 +523,52 @@ main{
 @media(max-width:900px){
 
   .app-header{
-    display:block;
-    padding:16px 18px
+    flex-wrap:wrap;
+    padding:10px 14px
   }
 
-  .tools{
-    display:grid;
-    grid-template-columns:1fr auto;
-    margin-top:14px
-  }
-
-  input{
+  .header-left{
     width:100%
   }
 
-  .tabs{
-    top:122px;
-    padding:12px 18px
+  .tools{
+    width:100%;
+    justify-content:flex-end
+  }
+
+  input{
+    flex:1;
+    min-width:80px
   }
 
   main{
-    padding:18px
+    padding:14px
   }
 
   .home-strip,
   .rail,
   .season-wall,
   .home-grid{
-    grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
-    gap:12px
+    grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
+    gap:10px
   }
 
   .detail-content{
     grid-template-columns:1fr;
     min-height:auto;
-    padding:24px
+    padding:20px
   }
 
   .detail-poster{
-    max-width:230px
+    max-width:180px
   }
 
   .episode-wall{
     grid-template-columns:1fr
   }
 
-  .rating-buttons{
-    grid-template-columns:repeat(5,1fr)
+  .season-wall{
+    grid-template-columns:repeat(auto-fill,minmax(120px,1fr))
   }
 }
 
@@ -662,6 +647,134 @@ mark{
   background:transparent;
   color:var(--accent);
   font-weight:950
+}
+
+/* ===== 星级评分 ===== */
+.star-rating{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  margin-top:14px;
+  padding:10px 14px;
+  border-radius:14px;
+  background:rgba(255,255,255,.06);
+  border:1px solid var(--line)
+}
+.star{
+  font-size:24px;
+  cursor:pointer;
+  transition:transform .15s,color .15s;
+  line-height:1
+}
+.star:hover{transform:scale(1.2)}
+.star-full{color:var(--accent)}
+.star-half{color:var(--accent);position:relative}
+.star-half:after{content:"☆";position:absolute;left:0;top:0;color:var(--muted);clip-path:inset(0 50% 0 0)}
+.star-empty{color:var(--muted)}
+.star-score{font-size:18px;font-weight:950;color:var(--accent);margin-left:6px;min-width:28px}
+.star-hint{font-size:12px;color:var(--muted);margin-left:6px}
+.star-clear{
+  margin-left:6px;
+  padding:2px 8px;
+  border-radius:999px;
+  border:0;
+  font-size:12px;
+  color:var(--muted);
+  background:rgba(255,255,255,.08);
+  cursor:pointer
+}
+.star-clear:hover{color:var(--text);background:rgba(255,255,255,.15)}
+
+/* ===== 更多菜单 ===== */
+.more-wrap{position:relative;display:inline-block}
+.more-btn{
+  letter-spacing:2px;
+  padding:8px 14px;
+  font-weight:700;
+  font-size:16px
+}
+.more-dropdown{
+  position:absolute;
+  right:0;
+  top:100%;
+  margin-top:6px;
+  min-width:140px;
+  padding:6px;
+  border-radius:12px;
+  background:var(--panel2);
+  border:1px solid var(--line);
+  box-shadow:0 12px 40px rgba(0,0,0,.5);
+  z-index:50
+}
+.more-dropdown button{
+  display:block;
+  width:100%;
+  text-align:left;
+  padding:8px 12px;
+  border-radius:8px;
+  background:transparent;
+  color:var(--text);
+  font-weight:500;
+  font-size:13px
+}
+.more-dropdown button:hover{background:rgba(255,255,255,.1)}
+
+/* ===== CTA 按钮 ===== */
+.cta-btn{
+  padding:10px 20px;
+  font-size:15px;
+  font-weight:950;
+  background:linear-gradient(135deg,var(--accent),#ffe2a0);
+  border-radius:14px
+}
+
+/* ===== 毛玻璃遮罩 ===== */
+.detail-overlay{
+  position:absolute;
+  inset:0;
+  background:linear-gradient(100deg,rgba(7,8,11,.97) 0%,rgba(7,8,11,.75) 35%,rgba(7,8,11,.35) 70%,rgba(7,8,11,.15) 100%);
+  z-index:1;
+  pointer-events:none
+}
+.detail-hero .detail-content{
+  z-index:2
+}
+.detail-hero:after{display:none}
+
+/* ===== 季进度条 ===== */
+.season-progress{
+  height:4px;
+  margin-top:8px;
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+  overflow:hidden
+}
+.season-progress-bar{
+  height:100%;
+  border-radius:999px;
+  background:var(--accent);
+  transition:width .4s
+}
+
+/* ===== 内联集列表 ===== */
+.inline-episodes{
+  margin-top:14px;
+  padding:14px;
+  border-radius:var(--radius);
+  background:rgba(255,255,255,.04);
+  border:1px solid var(--line)
+}
+.inline-episodes-head{
+  margin-bottom:10px
+}
+.season-card.season-expanded{
+  border-color:var(--accent);
+  box-shadow:0 0 20px rgba(245,196,81,.15)
+}
+
+/* ===== 当前剧集高亮 ===== */
+.active-episode{
+  border-color:var(--good)
 }
 
 /* ===== Toast ===== */
