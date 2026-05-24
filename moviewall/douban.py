@@ -105,9 +105,14 @@ def search_and_fetch(title_cn, title_en, year):
             if not items:
                 continue
 
+            # Filter: only keep movie/TV subjects (exclude people, books, etc.)
+            valid = [i for i in items if i.get("tpl_name") in ("search_subject", None, "")]
+            if not valid:
+                continue
+
             # First pass: try to match by year
             best = None
-            for item in items:
+            for item in valid:
                 item_year = item.get("year", "") or _extract_year_from_text(item.get("title", ""))
                 if year and item_year and str(year) in str(item_year):
                     best = item
@@ -115,8 +120,8 @@ def search_and_fetch(title_cn, title_en, year):
 
             # Second pass: prefer item with rating > 0
             if best is None:
-                with_rating = [i for i in items if i.get("rating", {}).get("value")]
-                best = with_rating[0] if with_rating else items[0]
+                with_rating = [i for i in valid if i.get("rating", {}).get("value")]
+                best = with_rating[0] if with_rating else valid[0]
 
             douban_id = best.get("id", "")
             if not douban_id:
@@ -192,20 +197,23 @@ def get_douban_metadata(title_cn, title_en, year, media_type):
     search_key = f"douban:{urllib.parse.quote(title_cn)}:{year or ''}"
     cached = cache.get(search_key)
 
+    # Basic info (rating + abstract) from search results, cached 30 days
     if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
-        return cached.get("data")
+        result = cached["data"]
+    else:
+        try:
+            result = search_and_fetch(title_cn, title_en, year)
+        except Exception:
+            result = None
+        cache[search_key] = {"_cached_at": time.time(), "data": result}
+        write_json(METADATA_CACHE_FILE, cache)
 
-    try:
-        result = search_and_fetch(title_cn, title_en, year)
-        if result and result.get("douban_id"):
-            synopsis = fetch_douban_synopsis(result["douban_id"])
-            if synopsis:
-                result["synopsis"] = synopsis
-    except Exception:
-        result = None
+    # Always try to attach synopsis (separate cache, may already exist)
+    if result and result.get("douban_id"):
+        synopsis = fetch_douban_synopsis(result["douban_id"])
+        if synopsis:
+            result["synopsis"] = synopsis
 
-    cache[search_key] = {"_cached_at": time.time(), "data": result}
-    write_json(METADATA_CACHE_FILE, cache)
     return result
 
 
@@ -217,36 +225,34 @@ def get_douban_metadata_by_id(douban_id):
     cached = cache.get(cache_key)
     cfg = load_config()
     if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
-        return cached.get("data")
-
-    # For a known ID, search by that ID on douban
-    opener = _get_opener()
-    result = None
-    for cat in ["1002", ""]:
-        url = DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode({"search_text": douban_id, "cat": cat}) if cat else \
-              DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode({"search_text": douban_id})
-        html = _request(url, opener)
-        if not html:
-            continue
-        items = _parse_search_data(html)
-        for item in items:
-            if item.get("id") == douban_id:
-                rating_info = item.get("rating", {}) or {}
-                rating = rating_info.get("value", "")
-                result = {"douban_id": douban_id}
-                if rating:
-                    result["rating"] = float(rating)
+        result = cached["data"]
+    else:
+        opener = _get_opener()
+        result = None
+        for cat in ["1002", ""]:
+            url = (DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode({"search_text": douban_id, "cat": cat})) if cat else \
+                  (DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode({"search_text": douban_id}))
+            html = _request(url, opener)
+            if not html:
+                continue
+            items = _parse_search_data(html)
+            for item in items:
+                if item.get("id") == douban_id and item.get("tpl_name") in ("search_subject", None, ""):
+                    rating_info = item.get("rating", {}) or {}
+                    rating = rating_info.get("value", "")
+                    result = {"douban_id": douban_id}
+                    if rating:
+                        result["rating"] = float(rating)
+                    break
+            if result:
                 break
-        if result:
-            break
+        cache[cache_key] = {"_cached_at": time.time(), "data": result}
+        write_json(METADATA_CACHE_FILE, cache)
 
     if result and result.get("douban_id"):
         synopsis = fetch_douban_synopsis(result["douban_id"])
         if synopsis:
             result["synopsis"] = synopsis
-
-    cache[cache_key] = {"_cached_at": time.time(), "data": result}
-    write_json(METADATA_CACHE_FILE, cache)
     return result
 
 
