@@ -134,15 +134,15 @@ def register_routes(app):
             "library_root": cfg.get("library_root", ""),
         })
 
-@app.route("/api/config", methods=["PUT"])
-def api_update_config():
-    data = request.get_json(force=True)
-    cfg = load_config()
-    for key in ("categories", "library_root", "players", "douban_enabled", "douban_id_overrides"):
-        if key in data:
-            cfg[key] = data[key]
-    write_json(CONFIG_FILE, cfg)
-    return jsonify({"ok": True})
+    @app.route("/api/config", methods=["PUT"])
+    def api_update_config():
+        data = request.get_json(force=True)
+        cfg = load_config()
+        for key in ("categories", "library_root", "players", "douban_enabled", "douban_id_overrides"):
+            if key in data:
+                cfg[key] = data[key]
+        write_json(CONFIG_FILE, cfg)
+        return jsonify({"ok": True})
 
     @app.route("/api/ratings", methods=["GET"])
     def api_get_ratings():
