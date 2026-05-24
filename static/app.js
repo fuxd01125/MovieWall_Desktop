@@ -632,9 +632,10 @@ function renderSeasonDetail(show, season) {
   const firstEntry = firstEp ? episodeEntry(show, season, firstEp, season.title + " · " + firstEp.title) : "";
   const seasonHero = {...season, display_title:titleOf(show) + " · " + season.title, title:titleOf(show) + " · " + season.title, metadata:show.metadata};
   const overview = season?.metadata?.overview || tmdb(show).overview || "";
+  const t = tmdb(show);
   const sm = show._season_meta || {};
   const sMeta = sm[String(season.season_number)] || {};
-  const seasonRating = sMeta.rating || "";
+  const seasonRating = sMeta.rating || t.vote_average || "";
   const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
   const seasonOverview = sMeta.overview || overview;
 
