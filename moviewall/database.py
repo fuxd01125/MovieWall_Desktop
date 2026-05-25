@@ -244,9 +244,9 @@ def delete_media(media_id):
 
 
 def delete_all_media():
+    """Delete only media and metadata — preserve user data (ratings, favorites, history)."""
     conn = get_conn()
-    for t in ("episodes","seasons","metadata_douban_seasons","metadata_tmdb","metadata_douban",
-              "history","favorites","ratings","media"):
+    for t in ("episodes","seasons","metadata_douban_seasons","metadata_tmdb","metadata_douban","media"):
         conn.execute(f"DELETE FROM {t}")
     conn.commit()
     conn.close()
@@ -310,9 +310,14 @@ def save_douban_meta(media_id, data):
         INSERT INTO metadata_douban (media_id,douban_id,rating,star_count,rating_count,abstract,abstract_2,synopsis,raw,fetched_at)
         VALUES (?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(media_id) DO UPDATE SET
-            douban_id=excluded.douban_id, rating=excluded.rating, star_count=excluded.star_count,
-            rating_count=excluded.rating_count, abstract=excluded.abstract, abstract_2=excluded.abstract_2,
-            synopsis=excluded.synopsis, raw=excluded.raw, fetched_at=excluded.fetched_at
+            douban_id=COALESCE(NULLIF(excluded.douban_id,''), metadata_douban.douban_id),
+            rating=COALESCE(excluded.rating, metadata_douban.rating),
+            star_count=COALESCE(excluded.star_count, metadata_douban.star_count),
+            rating_count=COALESCE(excluded.rating_count, metadata_douban.rating_count),
+            abstract=COALESCE(NULLIF(excluded.abstract,''), metadata_douban.abstract),
+            abstract_2=COALESCE(NULLIF(excluded.abstract_2,''), metadata_douban.abstract_2),
+            synopsis=COALESCE(NULLIF(excluded.synopsis,''), metadata_douban.synopsis),
+            raw=excluded.raw, fetched_at=excluded.fetched_at
     """, (
         media_id,
         data.get("douban_id"),

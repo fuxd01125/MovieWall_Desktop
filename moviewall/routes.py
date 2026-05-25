@@ -306,12 +306,13 @@ def register_routes(app):
             if existing:
                 rating = manual_rating if manual_rating is not None else existing["rating"]
                 synopsis = manual_synopsis if manual_synopsis else existing["synopsis"]
+                new_id = douban_id or existing["douban_id"]
                 conn.execute("""UPDATE metadata_douban SET rating=?, synopsis=?, douban_id=? WHERE media_id=?""",
-                             (rating, synopsis, douban_id, media_id))
+                             (rating, synopsis, new_id, media_id))
             else:
                 conn.execute("""INSERT INTO metadata_douban (media_id,douban_id,rating,synopsis,fetched_at)
                                 VALUES (?,?,?,?,?)""",
-                             (media_id, douban_id, manual_rating, manual_synopsis, time.time()))
+                             (media_id, douban_id or None, manual_rating, manual_synopsis, time.time()))
             conn.commit()
             conn.close()
             if manual_synopsis and item:
@@ -346,10 +347,16 @@ def register_routes(app):
         if douban_id:
             set_douban_id_override(media_id, douban_id)
 
-        # Clear cache to force re-fetch
+        # Clear only cache entries for this item (not entire cache)
         try:
             if METADATA_CACHE_FILE.exists():
-                METADATA_CACHE_FILE.unlink()
+                import json as _json
+                cache = _json.loads(METADATA_CACHE_FILE.read_text("utf-8"))
+                # Find and remove keys containing the media_id or douban_id
+                to_del = [k for k in cache if media_id in k or (douban_id and douban_id in k)]
+                for k in to_del:
+                    cache.pop(k, None)
+                METADATA_CACHE_FILE.write_text(_json.dumps(cache, ensure_ascii=False), "utf-8")
         except Exception:
             pass
 

@@ -48,10 +48,14 @@ def _request(url, opener=None):
     try:
         with opener.open(urllib.request.Request(url, headers=h), timeout=15) as r:
             html = r.read().decode("utf-8", errors="replace")
-            if "登录重定向" in html or "检测到异常" in html or r.status == 403:
+            if "登录重定向" in html or "检测到异常" in html:
                 _douban_blocked_log()
                 return None
             return html
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            _douban_blocked_log()
+        return None
     except Exception:
         return None
 
@@ -198,7 +202,7 @@ def fetch_douban_meta(title, year):
         result = _parse_rating(item) if item else None
         _cache_set(key, {"_cached_at": time.time(), "data": result})
 
-    if result and result.get("douban_id"):
+    if result and result.get("douban_id") and not result.get("synopsis"):
         syn = _fetch_synopsis(result["douban_id"])
         if syn:
             result["synopsis"] = syn

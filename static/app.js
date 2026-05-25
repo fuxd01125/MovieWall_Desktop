@@ -127,6 +127,8 @@ function renderCategoryTabs() {
 }
 
 function setTab(key) {
+  moreMenuOpen = null;
+  seasonMoreOpen = null;
   activeTab = key;
   navStack = [];
   renderHome();
@@ -259,6 +261,7 @@ function navigateTo(view) {
 
 function goBackSmart() {
   moreMenuOpen = null;
+  seasonMoreOpen = null;
   const prev = navStack.pop();
   expandedSeason = null;
   renderRoute(prev || {type:"home"});
@@ -266,9 +269,11 @@ function goBackSmart() {
 }
 
 function goHome() {
+  moreMenuOpen = null;
+  seasonMoreOpen = null;
   navStack = [];
   expandedSeason = null;
-  renderHome();
+  renderRoute({type:"home"});
   window.scrollTo({top:0, behavior:"smooth"});
 }
 
@@ -861,6 +866,8 @@ let settingDoubanId = "";
 let settingDoubanItemId = "";
 
 function openDoubanSetting(itemId, currentDoubanId) {
+  moreMenuOpen = null;
+  seasonMoreOpen = null;
   settingDoubanItemId = itemId;
   settingDoubanId = currentDoubanId || "";
   renderSettings();
@@ -888,7 +895,7 @@ async function saveDoubanId() {
   settingDoubanId = "";
   const libRes = await fetch("/api/library");
   library = await libRes.json();
-  renderRoute(currentView);
+  navigateTo({type:"detail", id: itemId});
 }
 
 async function saveDoubanIdAndUpdate() {
@@ -903,12 +910,13 @@ async function saveDoubanIdAndUpdate() {
 async function clearDoubanId(itemId) {
   await fetch("/api/metadata/douban/" + itemId, {method:"DELETE"});
   showToast("已清除豆瓣关联");
-  renderRoute(currentView);
+  const libRes = await fetch("/api/library");
+  library = await libRes.json();
+  navigateTo({type:"detail", id: itemId});
 }
 
 function renderSettings() {
   navStack = [];
-  currentView = {type:"home"};
   renderCategoryTabs();
   renderBreadcrumb();
   const catKeys = Object.keys(categoriesConfig);
@@ -927,7 +935,7 @@ function renderSettings() {
       + '<p class="settings-hint">豆瓣 ID 可在豆瓣网页 URL 中找到，如 <code>https://movie.douban.com/subject/<strong>10440076</strong>/</code></p>'
       + '<div class="settings-cat-row"><input id="doubanIdInput" style="flex:0.4" value="' + escapeHtml(settingDoubanId) + '" placeholder="豆瓣 ID"><input id="doubanRating" style="flex:0.15" value="' + escapeHtml(String(curRating)) + '" placeholder="评分"><button onclick="saveDoubanId()">保存</button>'
       + (doubanUrl ? '<button class="ghost" onclick="window.open(\'' + doubanUrl + '\')">打开豆瓣页</button>' : '')
-      + '<button class="ghost" onclick="settingDoubanItemId=\'\';renderSettings()">取消</button></div>'
+      + '<button class="ghost" onclick="settingDoubanItemId=\'\';navigateTo({type:\'detail\', id:\'' + escapeJs(settingDoubanItemId) + '\'})">取消</button></div>'
       + '<div class="settings-cat-row" style="margin-top:6px"><textarea id="doubanSynopsis" style="flex:1;min-height:60px;padding:8px;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--text);font-family:var(--font);font-size:13px;resize:vertical" placeholder="剧情简介（可选）">' + escapeHtml(curSynopsis) + '</textarea></div>'
       + '</div>';
   }
@@ -1016,6 +1024,8 @@ async function _pollProgress(bar) {
 }
 
 async function _loadAfterScan() {
+  moreMenuOpen = null;
+  seasonMoreOpen = null;
   showSkeleton();
   const res = await fetch("/api/library");
   library = await res.json();
@@ -1072,7 +1082,7 @@ async function updateSingleItem(mediaId, doubanId) {
   if (data.ok) {
     showToast("已更新");
     moreMenuOpen = null;
-    navStack = [];
+    seasonMoreOpen = null;
     const libRes = await fetch("/api/library");
     library = await libRes.json();
     renderRoute(currentView);

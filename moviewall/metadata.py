@@ -131,6 +131,8 @@ def attach_all_metadata(item):
             meta["douban"] = douban_data
             if douban_data.get("synopsis") and tmdb_data:
                 tmdb_data["overview"] = douban_data["synopsis"]
+                # Persist the synopsis override to DB so it survives page reload
+                save_tmdb_meta(media_id, {**tmdb_data, "_season_data": tmdb_data.get("_season_data")})
 
     item["metadata"] = meta
 
