@@ -131,12 +131,6 @@ CREATE INDEX IF NOT EXISTS idx_episodes_show  ON episodes(show_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_season ON episodes(season_id);
 CREATE INDEX IF NOT EXISTS idx_history_media  ON history(media_id);
 
--- Migrate existing tables: add columns if missing
-ALTER TABLE metadata_douban_seasons ADD COLUMN rating_count  INTEGER;
-ALTER TABLE metadata_douban_seasons ADD COLUMN synopsis      TEXT;
-ALTER TABLE metadata_douban_seasons ADD COLUMN poster_url    TEXT;
-ALTER TABLE metadata_douban_seasons ADD COLUMN cast_info     TEXT;
-ALTER TABLE metadata_douban_seasons ADD COLUMN air_date      TEXT;
 """
 
 # ── Connection helpers ──────────────────────────────────────────────
@@ -152,6 +146,12 @@ def get_conn():
 def init_db():
     conn = get_conn()
     conn.executescript(SCHEMA)
+    # Migrate: add columns that might be missing from older DB
+    for col in ("rating_count", "synopsis", "poster_url", "cast_info", "air_date"):
+        try:
+            conn.execute(f"ALTER TABLE metadata_douban_seasons ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.commit()
     conn.close()
 
