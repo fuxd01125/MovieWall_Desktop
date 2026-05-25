@@ -567,13 +567,10 @@ function renderMovieDetail(item) {
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
     + renderDoubanTags(item)
-    + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
+    + (overview ? '<div class="overview-wrap"><div class="overview full">' + escapeHtml(overview) + '</div></div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
-    + '<button class="cta-btn secondary' + (isFavorite(item.id) ? ' favorited' : '') + '" onclick="event.stopPropagation();toggleFavorite(\'' + item.id + '\')">' + (isFavorite(item.id) ? '♥' : '♡') + ' 收藏</button>'
-    + '<button class="cta-btn secondary" onclick="showToast(\'评论功能开发中\')">✎ 评论</button>'
-    + more
     + '</div>';
 
   app.innerHTML = detailHero(item, body);
@@ -599,7 +596,7 @@ function renderShowDetail(item) {
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
     + renderDoubanTags(item)
-    + (overview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(overview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
+    + (overview ? '<div class="overview-wrap"><div class="overview full">' + escapeHtml(overview) + '</div></div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '')
@@ -701,7 +698,7 @@ function renderSeasonDetail(show, season) {
   const body = '<h1>' + escapeHtml(season.title) + '</h1>'
     + '<div class="detail-primary-meta">' + metaParts.join('<span class="sep">·</span>') + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(show) + '</div>'
-    + (seasonOverview ? '<div class="overview-wrap"><div class="overview" id="overviewText">' + escapeHtml(seasonOverview) + '</div><button class="expand-btn" onclick="toggleOverview()">展开</button></div>' : '')
+    + (seasonOverview ? '<div class="overview-wrap"><div class="overview full">' + escapeHtml(seasonOverview) + '</div></div>' : '')
     + '<div class="detail-actions">'
     + (firstEp ? '<button class="cta-btn" onclick="playMedia(\'' + escapeJs(firstEp.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '<button class="cta-btn" disabled>无剧集</button>')
     + '<button class="cta-btn secondary" onclick="event.stopPropagation();navigateTo({type:\'detail\', id:\'' + show.id + '\'})">← 返回剧集</button>'
@@ -760,14 +757,6 @@ function playFirstEpisode(showId, seasonNumber) {
   if (!show || !season || !ep) return;
   const label = season.title + " · " + ep.title;
   playMedia(ep.path, {media_id:show.id, episode_id:ep.id, type:"episode", path:ep.path, title:ep.title, show_title:titleOf(show), season_number:season.season_number, episode_number:ep.episode_number || 0, label, short_label:"S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0")});
-}
-
-function toggleOverview() {
-  const wrap = document.querySelector(".overview");
-  const btn = document.querySelector(".expand-btn");
-  if (!wrap || !btn) return;
-  const expanded = wrap.classList.toggle("expanded");
-  btn.textContent = expanded ? "收起" : "展开";
 }
 
 /* ===== Settings ===== */

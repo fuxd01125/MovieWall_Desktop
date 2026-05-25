@@ -350,23 +350,8 @@ main{
 .overview{
   color:#b3b3b3;
   font-size:14px;line-height:1.6;
-  display:-webkit-box;
-  -webkit-line-clamp:3;
-  -webkit-box-orient:vertical;
-  overflow:hidden;
-  transition:all .3s
+  overflow:hidden
 }
-.overview.expanded{-webkit-line-clamp:unset;display:block}
-
-.expand-btn{
-  margin-top:6px;padding:4px 10px;
-  font-size:12px;font-weight:600;
-  border-radius:999px;border:0;
-  color:var(--accent);
-  background:rgba(245,196,81,.1);
-  cursor:pointer;transition:.18s
-}
-.expand-btn:hover{background:rgba(245,196,81,.2)}
 
 /* ===== Action Bar ===== */
 
