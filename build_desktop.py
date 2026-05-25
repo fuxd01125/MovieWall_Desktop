@@ -1,83 +1,139 @@
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-DIST_DIR = ROOT / "dist" / "MovieWall"
+RELEASE_DIR = ROOT / "release"
+DIST_DIR = RELEASE_DIR / "dist"
 BUILD_DIR = ROOT / "build"
-LOG_FILE = ROOT / "build_error.log"
+LOG_FILE = RELEASE_DIR / "build_error.log"
+_SEP = ";" if os.name == "nt" else ":"
+
 
 def log(text): print(text, flush=True)
+
 
 def run(cmd, title=None):
     if title:
         log("")
-        log(title)
-    log("RUN: " + " ".join(str(x) for x in cmd))
+        log(f"  {title}")
+    log("  RUN: " + " ".join(str(x) for x in cmd))
     result = subprocess.run(cmd, cwd=str(ROOT), text=True)
     if result.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(str(x) for x in cmd)}")
+        raise RuntimeError(
+            f"Command failed (rc={result.returncode}): {' '.join(str(x) for x in cmd)}"
+        )
+    return result
+
 
 def safe_rmtree(path):
     if path.exists():
         shutil.rmtree(path, ignore_errors=True)
 
+
 def copy_file(src, dst):
     if src.exists():
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
+        log(f"  COPY: {src.name} -> {dst}")
 
-def copy_dir(src, dst):
-    if src.exists():
-        if dst.exists():
-            shutil.rmtree(dst, ignore_errors=True)
-        shutil.copytree(src, dst)
 
 def main():
     try:
-        log("==========================================")
-        log(" MovieWall Desktop EXE Builder V15")
-        log("==========================================")
-        log(f"Python: {sys.executable}")
-        run([sys.executable, "-m", "pip", "install", "-r", "requirements_desktop.txt"], "[1/4] Installing dependencies")
+        log("=" * 50)
+        log(" MovieWall EXE Builder (--onefile)")
+        log("=" * 50)
+        log(f" Python: {sys.executable}")
+        log(f" Root:   {ROOT}")
+
+        # Step 1: Install dependencies
+        run(
+            [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+            "[1/5] Installing dependencies",
+        )
+
+        # Step 2: Clean old build artifacts
         log("")
-        log("[2/4] Cleaning old build files")
+        log("[2/5] Cleaning old build files")
         safe_rmtree(BUILD_DIR)
-        safe_rmtree(DIST_DIR)
-        spec = ROOT / "MovieWall.spec"
-        if spec.exists():
-            spec.unlink()
-        run([
+        old_dist = ROOT / "dist"
+        safe_rmtree(old_dist)
+        old_release = ROOT / "release"
+        safe_rmtree(old_release)
+
+        # Step 3: Build with PyInstaller --onefile
+        log("")
+        log("[3/5] Building MovieWall.exe (--onefile)")
+        add_data = []
+        add_data.append(f"templates{_SEP}templates")
+        add_data.append(f"static{_SEP}static")
+        add_data.append(f"MovieWall.ico{_SEP}.")
+
+        cmd = [
             sys.executable, "-m", "PyInstaller",
-            "--noconfirm", "--clean", "--noconsole", "--onedir",
+            "--noconfirm", "--clean",
+            "--onefile",
+            "--noconsole",
             "--name", "MovieWall",
-            "--icon", "MovieWall.ico",
+            "--icon", str(ROOT / "MovieWall.ico"),
             "--collect-all", "webview",
             "--hidden-import", "webview.platforms.edgechromium",
-            "desktop_app.py"
-        ], "[3/4] Building MovieWall.exe")
+        ]
+        for ad in add_data:
+            cmd.extend(["--add-data", ad])
+        cmd.append(str(ROOT / "desktop_app.py"))
+        run(cmd)
+
+        # Step 4: Prepare release directory
         log("")
-        log("[4/4] Copying runtime files")
-        copy_dir(ROOT / "templates", DIST_DIR / "templates")
-        copy_dir(ROOT / "static", DIST_DIR / "static")
-        copy_dir(ROOT / "moviewall", DIST_DIR / "moviewall")
+        log("[4/5] Preparing release directory")
+        safe_rmtree(RELEASE_DIR)
+        RELEASE_DIR.mkdir(parents=True, exist_ok=True)
+        DIST_DIR.mkdir(parents=True, exist_ok=True)
+
+        exe_src = ROOT / "dist" / "MovieWall.exe"
+        if not exe_src.exists():
+            raise RuntimeError(f"MovieWall.exe not found at: {exe_src}")
+
+        exe_dst = DIST_DIR / "MovieWall.exe"
+        shutil.copy2(exe_src, exe_dst)
+        log(f"  COPY: MovieWall.exe -> {exe_dst}")
+
+        # Copy config.json and icon alongside the exe
         for name in ["config.json", "MovieWall.ico"]:
             copy_file(ROOT / name, DIST_DIR / name)
-        exe = DIST_DIR / "MovieWall.exe"
-        if not exe.exists():
-            raise RuntimeError(f"MovieWall.exe was not found: {exe}")
+
+        # Create logs directory
+        (RELEASE_DIR / "logs").mkdir(exist_ok=True)
+
+        exe_file = DIST_DIR / "MovieWall.exe"
+        if not exe_file.exists():
+            raise RuntimeError(f"MovieWall.exe was not found: {exe_file}")
+
+        exe_size = exe_file.stat().st_size / (1024 * 1024)
         log("")
-        log("BUILD SUCCESS")
-        log(f"Your app is here: {exe}")
+        log("=" * 50)
+        log(" BUILD SUCCESS")
+        log(f" EXE: {exe_file}")
+        log(f" Size: {exe_size:.1f} MB")
+        log("=" * 50)
+
     except Exception as e:
-        LOG_FILE.write_text(str(e), encoding="utf-8")
+        import traceback
+        err_msg = traceback.format_exc()
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        LOG_FILE.write_text(err_msg, encoding="utf-8")
         log("")
-        log("BUILD FAILED")
-        log(f"Reason: {e}")
-        log(f"Log file: {LOG_FILE}")
+        log("=" * 50)
+        log(" BUILD FAILED")
+        log(f" Reason: {e}")
+        log(f" Log: {LOG_FILE}")
+        log("=" * 50)
         input("Press Enter to exit...")
         raise
+
 
 if __name__ == "__main__":
     main()

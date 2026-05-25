@@ -9,6 +9,7 @@ from tkinter import Tk, messagebox
 
 from werkzeug.serving import make_server
 from moviewall import app
+from moviewall.config import packaged_dir
 
 APP_TITLE = "MovieWall"
 
@@ -71,7 +72,7 @@ def main():
             except OSError:
                 time.sleep(0.1)
 
-        icon_path = str(Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent / "MovieWall.ico")
+        icon_path = str(packaged_dir() / "MovieWall.ico")
         kwargs = dict(title=APP_TITLE, url=url, width=1280, height=820, min_size=(960, 640), confirm_close=False, text_select=True)
         if Path(icon_path).exists():
             try:

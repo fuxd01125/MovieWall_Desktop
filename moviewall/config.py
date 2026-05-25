@@ -5,12 +5,21 @@ from pathlib import Path
 
 
 def runtime_dir():
+    """User data directory: config, db, cache, generated files."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
 
 
+def packaged_dir():
+    """Bundled data directory: templates, static (read-only)."""
+    if getattr(sys, "frozen", False) and hasattr(sys, '_MEIPASS'):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent
+
+
 APP_DIR = runtime_dir()
+PACKAGED_DIR = packaged_dir()
 CONFIG_FILE = APP_DIR / "config.json"
 METADATA_CACHE_FILE = APP_DIR / "metadata_cache.json"
 
