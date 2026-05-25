@@ -1,8 +1,10 @@
 """Metadata provider — fetches TMDB + Douban data, stores separately in DB."""
 import time
+from pathlib import Path
+from urllib.request import urlopen
 
 from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE
-from moviewall.database import save_tmdb_meta, save_douban_meta, save_douban_season_meta
+from moviewall.database import save_tmdb_meta, save_douban_meta, save_douban_season_meta, get_conn
 from moviewall.utils import normalize_key, tmdb_request, tmdb_image
 
 
@@ -51,7 +53,7 @@ def get_tmdb_metadata(title, year, media_type):
 
 
 def fetch_tmdb_seasons(tmdb_id, seasons_list, lang):
-    """Fetch per-season TMDB metadata (rating, air_date, overview)."""
+    """Fetch per-season TMDB metadata (rating, air_date, overview, poster)."""
     cache = read_json(METADATA_CACHE_FILE, {})
     season_map = {}
     for season in seasons_list:
@@ -67,11 +69,17 @@ def fetch_tmdb_seasons(tmdb_id, seasons_list, lang):
             if sdata:
                 cache[ck] = {"_cached_at": time.time(), "data": sdata}
         if sdata:
-            rating = sdata.get("vote_average")
-            air_date = sdata.get("air_date", "")
-            overview = sdata.get("overview", "")
-            if rating:
-                season_map[str(sn)] = {"rating": rating, "air_date": air_date, "overview": overview}
+            entry = {}
+            if sdata.get("vote_average"):
+                entry["rating"] = sdata["vote_average"]
+            if sdata.get("air_date"):
+                entry["air_date"] = sdata["air_date"]
+            if sdata.get("overview"):
+                entry["overview"] = sdata["overview"]
+            if sdata.get("poster_path"):
+                entry["poster_url"] = tmdb_image(sdata["poster_path"], "w500")
+            if entry:
+                season_map[str(sn)] = entry
     write_json(METADATA_CACHE_FILE, cache)
     return season_map
 
@@ -131,16 +139,44 @@ def attach_all_metadata(item):
         from moviewall.douban import fetch_douban_by_season
         show_title = tmdb_data.get("title", "") if tmdb_data else item.get("title", "")
         show_year = item.get("year", "")
+        orig_title_show = tmdb_data.get("original_title", "") if tmdb_data else ""
+
+        douban_found_id = (meta.get("douban") or {}).get("douban_id")
+
         season_meta = {}
         for season in item.get("seasons", []):
             sn = season.get("season_number")
             if not sn:
                 continue
-            sdata = fetch_douban_by_season(show_title, show_year, sn)
-            if sdata and sdata.get("rating"):
+            sdata = fetch_douban_by_season(show_title, show_year, sn, orig_title_show, douban_found_id)
+            if sdata:
                 save_douban_season_meta(season["id"], media_id, sn, sdata)
                 season_meta[str(sn)] = sdata
+                _download_season_poster(sdata, season, item)
         if season_meta:
             item["_season_meta"] = season_meta
 
     return item
+
+
+def _download_season_poster(sdata, season, show_item):
+    poster_url = sdata.get("poster_url")
+    if not poster_url or poster_url.startswith("/api/artwork"):
+        return
+    season_folder = Path(season.get("folder"))
+    if not season_folder.exists():
+        return
+    poster_path = season_folder / "poster.jpg"
+    if poster_path.exists():
+        return
+    try:
+        with urlopen(poster_url, timeout=10) as resp:
+            data = resp.read()
+        poster_path.write_bytes(data)
+        season["poster"] = str(poster_path.resolve())
+        conn = get_conn()
+        conn.execute("UPDATE seasons SET poster=? WHERE id=?", (season["poster"], season["id"]))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass

@@ -1,13 +1,15 @@
 """Flask routes — API endpoints backed by SQLite database."""
+import json
 import os
 import subprocess
 import threading
 import time
+import urllib.parse
 from pathlib import Path
 
 from flask import abort, jsonify, render_template, request, send_file
 
-from moviewall.config import load_config, write_json, CONFIG_FILE, load_players, normalize_categories
+from moviewall.config import load_config, write_json, CONFIG_FILE, METADATA_CACHE_FILE, load_players, normalize_categories
 from moviewall.database import (
     build_library_dict, load_all_ratings, load_all_history, load_all_favorites,
     save_rating, delete_rating, save_history, toggle_favorite,
@@ -109,20 +111,37 @@ def register_routes(app):
     @app.route("/api/update", methods=["POST"])
     def api_update_metadata():
         """Force re-fetch TMDB + Douban metadata for all items without re-scanning files."""
+        # Clear cache to force re-fetch
+        from moviewall.config import METADATA_CACHE_FILE
+        try:
+            if METADATA_CACHE_FILE.exists():
+                METADATA_CACHE_FILE.unlink()
+        except Exception:
+            pass
+
         def _run():
             global _scan_progress
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             _scan_progress = {"progress": 0, "message": "开始更新元数据...", "done": False, "error": ""}
             lib = build_library_dict()
             items = lib.get("items", [])
             total = len(items)
             try:
-                for idx, item in enumerate(items):
-                    def cb(p, msg):
-                        global _scan_progress
-                        _scan_progress = {"progress": p, "message": msg, "done": False, "error": ""}
-                    cb((idx + 1) / total if total else 1,
-                       f"更新: {item.get('display_title') or item.get('title')}")
-                    attach_all_metadata(item)
+                if total > 0:
+                    max_workers = min(5, total)
+                    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                        futures = {pool.submit(attach_all_metadata, item): item for item in items}
+                        done = 0
+                        for future in as_completed(futures):
+                            done += 1
+                            item = futures[future]
+                            _scan_progress = {"progress": done / total if total else 1,
+                                              "message": f"更新: {item.get('display_title') or item.get('title')}",
+                                              "done": False, "error": ""}
+                            try:
+                                future.result()
+                            except Exception:
+                                pass
                 _scan_progress["done"] = True
             except Exception as e:
                 _scan_progress = {"progress": 1, "message": str(e), "done": True, "error": str(e)}
@@ -282,6 +301,41 @@ def register_routes(app):
         from moviewall.database import get_conn
         conn = get_conn()
         conn.execute("DELETE FROM metadata_douban WHERE media_id=?", (media_id,))
+        conn.execute("DELETE FROM metadata_douban_seasons WHERE show_id=?", (media_id,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
+
+    @app.route("/api/update_single", methods=["POST"])
+    def api_update_single():
+        """Re-fetch metadata for a single item (optionally with a custom douban_id)."""
+        data = request.get_json(force=True)
+        media_id = data.get("media_id", "").strip()
+        douban_id = data.get("douban_id", "").strip()
+        if not media_id:
+            return jsonify({"ok": False, "error": "缺少 media_id"}), 400
+
+        if douban_id:
+            set_douban_id_override(media_id, douban_id)
+
+        # Clear entire cache to force re-fetch
+        try:
+            if METADATA_CACHE_FILE.exists():
+                METADATA_CACHE_FILE.unlink()
+        except Exception:
+            pass
+
+        # Also delete existing DB metadata so attach_all_metadata re-fetches
+        from moviewall.database import get_conn
+        conn = get_conn()
+        conn.execute("DELETE FROM metadata_douban WHERE media_id=?", (media_id,))
+        conn.execute("DELETE FROM metadata_douban_seasons WHERE show_id=?", (media_id,))
+        conn.execute("DELETE FROM metadata_tmdb WHERE media_id=?", (media_id,))
+        conn.commit()
+        conn.close()
+
+        item = find_media_by_id(media_id)
+        if item:
+            attach_all_metadata(item)
+
+        return jsonify({"ok": True, "media_id": media_id})

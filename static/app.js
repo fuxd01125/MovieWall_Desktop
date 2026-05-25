@@ -7,6 +7,7 @@ let players = [];
 let categoriesConfig = {};
 let expandedSeason = null;
 let moreMenuOpen = null;
+let seasonMoreOpen = null;
 
 const app = document.querySelector("#app");
 const search = document.querySelector("#search");
@@ -233,8 +234,7 @@ function findEpisode(episodeId) {
 }
 
 function renderRoute(view) {
-  moreMenuOpen = null;
-  if (!view || view.type === "home") return renderHome();
+  if (!view || view.type === "home") { moreMenuOpen = null; return renderHome(); }
   if (view.type === "detail") {
     const item = findItem(view.id);
     if (!item) return renderHome();
@@ -249,6 +249,8 @@ function renderRoute(view) {
 }
 
 function navigateTo(view) {
+  moreMenuOpen = null;
+  seasonMoreOpen = null;
   navStack.push({...currentView});
   expandedSeason = null;
   renderRoute(view);
@@ -256,6 +258,7 @@ function navigateTo(view) {
 }
 
 function goBackSmart() {
+  moreMenuOpen = null;
   const prev = navStack.pop();
   expandedSeason = null;
   renderRoute(prev || {type:"home"});
@@ -478,7 +481,13 @@ function renderPlayButtons(path, entryStr) {
 
 /* ===== More Menu ===== */
 
-function toggleMore(id) { moreMenuOpen = moreMenuOpen === id ? null : id; renderRoute(currentView); }
+function toggleMore(id, e) { if (e) e.stopPropagation(); moreMenuOpen = moreMenuOpen === id ? null : id; renderRoute(currentView); }
+function toggleSeasonMore(showId, sn, e) {
+  if (e) e.stopPropagation();
+  const id = "smore-" + showId + "-" + sn;
+  seasonMoreOpen = seasonMoreOpen === id ? null : id;
+  renderRoute(currentView);
+}
 
 function moreMenuHtml(item, extraActions) {
   const id = item.id;
@@ -488,7 +497,7 @@ function moreMenuHtml(item, extraActions) {
     actions += players.map(p => '<button onclick="playMedia(\'' + escapeJs(item.path) + '\',{media_id:\'' + item.id + '\'},\'' + escapeJs(p.name) + '\')">用 ' + escapeHtml(p.name) + ' 播放</button>').join("");
   }
   if (extraActions) actions += extraActions;
-  return '<div class="more-wrap"><button class="ghost more-btn" onclick="toggleMore(\'' + id + '\')">···</button>' + (open ? '<div class="more-dropdown" onclick="toggleMore(\'' + id + '\')">' + actions + '</div>' : '') + '</div>';
+  return '<div class="more-wrap"><button class="ghost more-btn" onclick="toggleMore(\'' + id + '\',event)">···</button>' + (open ? '<div class="more-dropdown" onclick="event.stopPropagation()">' + actions + '</div>' : '') + '</div>';
 }
 
 /* ===== Detail Page ===== */
@@ -560,7 +569,7 @@ function renderMovieDetail(item) {
   const hist = getItemHistory(item);
   const entry = "{media_id:'" + item.id + "',type:'movie',path:'" + escapeJs(item.path) + "',title:'" + escapeJs(titleOf(item)) + "',show_title:'" + escapeJs(titleOf(item)) + "',label:'电影',short_label:'电影'}";
   const d = douban(item);
-  const more = moreMenuHtml(item, '<button onclick="openFolder(\'' + escapeJs(item.folder) + '\')">打开文件夹</button><button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(d.douban_id || "") + '\')">' + (d.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>');
+  const more = moreMenuHtml(item, '<button onclick="openFolder(\'' + escapeJs(item.folder) + '\')">打开文件夹</button><button onclick="updateSingleItem(\'' + item.id + '\')">更新此项目</button><button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(d.douban_id || "") + '\')">' + (d.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>');
 
   const body = '<h1>' + escapeHtml(titleOf(item)) + '</h1>'
     + (origTitle ? '<div class="detail-subtitle">' + escapeHtml(origTitle) + '</div>' : '')
@@ -571,6 +580,7 @@ function renderMovieDetail(item) {
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
+    + more
     + '</div>';
 
   app.innerHTML = detailHero(item, body);
@@ -586,6 +596,7 @@ function renderShowDetail(item) {
   const hist = getItemHistory(item);
   const dd = douban(item);
   const moreActions = '<button onclick="openFolder(\'' + escapeJs(item.folder) + '\')">打开文件夹</button>'
+    + '<button onclick="updateSingleItem(\'' + item.id + '\')">更新此项目</button>'
     + '<button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(dd.douban_id || "") + '\')">' + (dd.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>';
   const more = moreMenuHtml(item, moreActions);
   const firstEp = findFirstEpisode(item);
@@ -646,19 +657,31 @@ function renderSeasonCard(show, season, expanded) {
   const t = tmdb(show);
   const sm = show._season_meta || {};
   const sMeta = sm[String(season.season_number)] || {};
-  const seasonRating = sMeta.rating || t.vote_average || "";
+  const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
   const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
-  return '<article class="card season-card' + (expanded ? ' season-expanded' : '') + '" onclick="toggleSeason(\'' + show.id + '\',' + season.season_number + ')">'
+  const seasonPoster = artworkUrl(season, "poster") || (sMeta.poster_url || tmdbSeasonData.poster_url || "");
+  const moreId = "smore-" + show.id + "-" + season.season_number;
+  const showMore = seasonMoreOpen === moreId;
+  const moreHtml = '<div class="season-more-wrap" onclick="event.stopPropagation()">'
+    + '<button class="season-more-btn" onclick="event.stopPropagation();toggleSeasonMore(\'' + show.id + '\',' + season.season_number + ')">···</button>'
+    + (showMore ? '<div class="season-more-dropdown">'
+      + '<button onclick="event.stopPropagation();updateSingleItem(\'' + show.id + '\')">更新此季</button>'
+      + '<button onclick="event.stopPropagation();toggleSeasonMore(\'' + show.id + '\',' + season.season_number + ');navigateTo({type:\'season\', showId:\'' + show.id + '\', seasonNumber:' + season.season_number + '})">季详情</button>'
+      + '</div>' : '')
+    + '</div>';
+  return '<article class="card season-card' + (expanded ? ' season-expanded' : '') + (showMore ? ' smore-open' : '') + '" onclick="toggleSeason(\'' + show.id + '\',' + season.season_number + ')">'
     + '<div class="card-poster">'
-    + (artworkUrl(season, "poster")
-      ? '<img src="' + artworkUrl(season, "poster") + '" loading="lazy">'
+    + (seasonPoster
+      ? '<img src="' + seasonPoster + '" loading="lazy">'
       : '<div class="placeholder">' + escapeHtml(titleOf(show)) + '</div>')
     + '</div>'
-    + '<div class="card-body"><h4 class="card-title">' + escapeHtml(season.title) + '</h4>'
+    + '<div class="card-body"><h4 class="card-title" style="display:inline">' + escapeHtml(season.title) + '</h4>'
+    + moreHtml
     + '<div class="season-meta">'
     + (seasonYear ? '<span class="year">' + seasonYear + '</span>' : '')
     + (season.episode_count ? '<span>' + season.episode_count + ' 集</span>' : '')
-    + (seasonRating ? renderRatingBadge(seasonRating, {sm:true}) : '')
+    + (sMeta.rating ? '<span class="rating-badge douban sm">豆瓣 ' + Number(sMeta.rating).toFixed(1) + '</span>' : '')
+    + (tmdbSeasonData.rating ? '<span class="rating-badge tmdb sm">TMDB ' + Number(tmdbSeasonData.rating).toFixed(1) + '</span>' : '')
     + '</div>'
     + (progressPct > 0
       ? '<div class="season-progress"><div class="season-progress-bar" style="width:' + progressPct + '%"></div></div><div class="season-progress-text">已看 ' + epWatched + '/' + (season.episode_count || 0) + '</div>'
@@ -667,14 +690,18 @@ function renderSeasonCard(show, season, expanded) {
 }
 
 function renderInlineEpisodes(show, season) {
+  const t = tmdb(show);
   const sm = show._season_meta || {};
   const sMeta = sm[String(season.season_number)] || {};
+  const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
+  const seasonSynopsis = sMeta.synopsis || tmdbSeasonData.overview || "";
+  const seasonPoster = artworkUrl(season, "poster") || (sMeta.poster_url || tmdbSeasonData.poster_url || "");
   let detailHtml = '';
-  if (sMeta.synopsis || sMeta.poster_url || sMeta.cast_info || sMeta.air_date) {
+  if (seasonSynopsis || seasonPoster || sMeta.cast_info || sMeta.air_date) {
     detailHtml = '<div class="season-detail-card">'
-      + (sMeta.poster_url ? '<img class="season-detail-poster" src="' + sMeta.poster_url + '" loading="lazy">' : '')
+      + (seasonPoster ? '<img class="season-detail-poster" src="' + seasonPoster + '" loading="lazy">' : '')
       + '<div class="season-detail-body">'
-      + (sMeta.synopsis ? '<div class="season-detail-synopsis">' + escapeHtml(sMeta.synopsis) + '</div>' : '')
+      + (seasonSynopsis ? '<div class="season-detail-synopsis">' + escapeHtml(seasonSynopsis) + '</div>' : '')
       + (sMeta.cast_info ? '<div class="season-detail-cast"><span class="cast-label">主演</span> <span>' + escapeHtml(sMeta.cast_info.replace(/\s*\/\s*/g, ' · ')) + '</span></div>' : '')
       + (sMeta.air_date ? '<div class="season-detail-air"><span class="cast-label">年份</span> <span>' + escapeHtml(sMeta.air_date) + '</span></div>' : '')
       + '</div></div>';
@@ -692,29 +719,61 @@ function renderSeasonDetail(show, season) {
   currentView = {type:"season", showId:show.id, seasonNumber:season.season_number};
   renderCategoryTabs();
   renderBreadcrumb();
+
   const firstEp = (season.episodes || [])[0];
   const firstEntry = firstEp ? episodeEntry(show, season, firstEp, season.title + " · " + firstEp.title) : "";
-  const seasonHero = {...season, display_title:titleOf(show) + " · " + season.title, title:titleOf(show) + " · " + season.title, metadata:show.metadata};
-  const overview = season?.metadata?.overview || tmdb(show).overview || "";
   const t = tmdb(show);
   const sm = show._season_meta || {};
   const sMeta = sm[String(season.season_number)] || {};
-  const seasonRating = sMeta.rating || t.vote_average || "";
+  const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
+  const seasonRating = sMeta.rating || tmdbSeasonData.rating || t.vote_average || "";
   const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
-  const seasonOverview = sMeta.overview || overview;
+  const seasonSynopsis = sMeta.synopsis || tmdbSeasonData.overview || "";
+  const origTitle = t.original_title && t.original_title !== titleOf(show) ? t.original_title : "";
+
+  const seasonPosterUrl = sMeta.poster_url || tmdbSeasonData.poster_url || t.poster_url;
+  const seasonHero = {
+    ...season,
+    display_title: titleOf(show) + " · " + season.title,
+    title: titleOf(show) + " · " + season.title,
+    metadata: {
+      ...show.metadata,
+      tmdb: {
+        ...t,
+        poster_url: seasonPosterUrl,
+        backdrop_url: t.backdrop_url || t.poster_url,
+      }
+    }
+  };
 
   const metaParts = [];
   if (seasonYear) metaParts.push('<span class="year">' + escapeHtml(seasonYear) + '</span>');
-  if (seasonRating) metaParts.push(renderRatingBadge(seasonRating));
+  if (sMeta.rating) metaParts.push('<span class="rating-badge douban">豆瓣 ' + Number(sMeta.rating).toFixed(1) + '</span>');
+  if (tmdbSeasonData.rating) metaParts.push('<span class="rating-badge tmdb">TMDB ' + Number(tmdbSeasonData.rating).toFixed(1) + '</span>');
+  if (sMeta.rating_count) metaParts.push('<span class="rating-badge douban-count">' + Number(sMeta.rating_count).toLocaleString() + ' 评</span>');
+  if (!sMeta.rating && !tmdbSeasonData.rating && seasonRating) metaParts.push(renderRatingBadge(seasonRating));
   metaParts.push('<span class="year">' + (season.episode_count || 0) + ' 集</span>');
 
+  const hist = getItemHistory(show);
+  const dd = douban(show);
+  const moreActions = '<button onclick="openFolder(\'' + escapeJs(show.folder) + '\')">打开文件夹</button>'
+    + '<button onclick="updateSingleItem(\'' + show.id + '\')">更新此项目</button>'
+    + '<button onclick="openDoubanSetting(\'' + show.id + '\',\'' + escapeJs(dd.douban_id || "") + '\')">' + (dd.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>';
+  const more = moreMenuHtml(show, moreActions);
+
   const body = '<h1>' + escapeHtml(season.title) + '</h1>'
+    + (origTitle ? '<div class="detail-subtitle">' + escapeHtml(origTitle) + '</div>' : '')
     + '<div class="detail-primary-meta">' + metaParts.join('<span class="sep">·</span>') + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(show) + '</div>'
-    + (seasonOverview ? '<div class="overview-wrap"><div class="overview full">' + escapeHtml(seasonOverview) + '</div></div>' : '')
+    + renderSeasonDoubanTags(show, season)
+    + (seasonSynopsis ? '<div class="overview-wrap"><div class="overview full">' + escapeHtml(seasonSynopsis) + '</div></div>' : '')
+    + starRatingWidget(show)
     + '<div class="detail-actions">'
+    + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + show.id + '\')">▶ 继续播放</button>' : '')
     + (firstEp ? '<button class="cta-btn" onclick="playMedia(\'' + escapeJs(firstEp.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '<button class="cta-btn" disabled>无剧集</button>')
+    + '<button class="cta-btn secondary' + (isFavorite(show.id) ? ' favorited' : '') + '" onclick="event.stopPropagation();toggleFavorite(\'' + show.id + '\')">' + (isFavorite(show.id) ? '♥' : '♡') + ' 收藏</button>'
     + '<button class="cta-btn secondary" onclick="event.stopPropagation();navigateTo({type:\'detail\', id:\'' + show.id + '\'})">← 返回剧集</button>'
+    + more
     + '</div>';
 
   app.innerHTML = detailHero(seasonHero, body)
@@ -723,6 +782,30 @@ function renderSeasonDetail(show, season) {
     + '<div class="episode-list">'
     + (season.episodes || []).map(ep => renderEpisodeCard(show, season, ep)).join("")
     + '</div></section>';
+}
+
+function renderSeasonDoubanTags(show, season) {
+  const sm = (show._season_meta || {});
+  const sMeta = sm[String(season.season_number)] || {};
+  const d = douban(show);
+  const abstract = d.abstract || "";
+  let tags = [];
+  if (abstract) {
+    abstract.split(' / ').forEach(part => {
+      part = part.trim();
+      if (!part) return;
+      tags.push('<span class="genre-tag douban-tag' + (/^\d+分钟$/.test(part) ? ' runtime' : '') + '">' + escapeHtml(part) + '</span>');
+    });
+  }
+  let html = '<div class="douban-meta">';
+  if (tags.length) html += '<div class="genre-tags douban-tags">' + tags.join('') + '</div>';
+  if (sMeta.cast_info) {
+    html += '<div class="douban-cast"><span class="cast-label">演员</span> <span class="cast-names">' + escapeHtml(sMeta.cast_info.replace(/ \/ /g, ' · ')) + '</span></div>';
+  } else if (d.abstract_2) {
+    html += '<div class="douban-cast"><span class="cast-label">演员</span> <span class="cast-names">' + escapeHtml(d.abstract_2.replace(/ \/ /g, ' · ')) + '</span></div>';
+  }
+  html += '</div>';
+  return html;
 }
 
 /* ===== Episode Entry ===== */
@@ -801,6 +884,15 @@ async function saveDoubanId() {
   renderRoute(currentView);
 }
 
+async function saveDoubanIdAndUpdate() {
+  const id = settingDoubanId.trim();
+  const itemId = settingDoubanItemId;
+  if (!itemId) return;
+  settingDoubanItemId = "";
+  settingDoubanId = "";
+  await updateSingleItem(itemId, id);
+}
+
 async function clearDoubanId(itemId) {
   await fetch("/api/metadata/douban/" + itemId, {method:"DELETE"});
   showToast("已清除豆瓣关联");
@@ -821,7 +913,7 @@ function renderSettings() {
     const itemName = item ? titleOf(item) : settingDoubanItemId;
     doubanSection = '<div class="settings-section"><div class="section-header"><h2>豆瓣关联</h2></div>'
       + '<p class="settings-hint">为 "' + escapeHtml(itemName) + '" 手动设置豆瓣 ID。可在豆瓣网页 URL 中找到，如 <code>https://movie.douban.com/subject/<strong>123456</strong>/</code></p>'
-      + '<div class="settings-cat-row"><input id="doubanIdInput" class="sc-folder" value="' + escapeHtml(settingDoubanId) + '" placeholder="输入豆瓣 ID 数字"><button onclick="saveDoubanId()">保存</button><button class="ghost" onclick="settingDoubanItemId=\'\';renderSettings()">取消</button></div>'
+      + '<div class="settings-cat-row"><input id="doubanIdInput" class="sc-folder" value="' + escapeHtml(settingDoubanId) + '" placeholder="输入豆瓣 ID 数字"><button onclick="saveDoubanId()">保存</button><button class="ghost" onclick="saveDoubanIdAndUpdate()">保存并立即更新</button><button class="ghost" onclick="settingDoubanItemId=\'\';renderSettings()">取消</button></div>'
       + '</div>';
   }
 
@@ -949,10 +1041,42 @@ async function updateMetadata() {
   await _loadAfterScan();
 }
 
+/* ===== Single Item Update ===== */
+
+async function updateSingleItem(mediaId, doubanId) {
+  const bar = document.getElementById("scanBar");
+  if (bar) { bar.classList.add("active"); bar.style.transform = "scaleX(0)"; }
+  showToast("更新中...");
+  const res = await fetch("/api/update_single", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({media_id: mediaId, douban_id: doubanId || ""})
+  });
+  const data = await res.json();
+  if (bar) bar.classList.remove("active");
+  if (data.ok) {
+    showToast("已更新");
+    moreMenuOpen = null;
+    navStack = [];
+    const libRes = await fetch("/api/library");
+    library = await libRes.json();
+    renderRoute(currentView);
+  } else {
+    showToast("更新失败: " + (data.error || "未知错误"), 3000);
+  }
+}
+
 document.addEventListener("click", (e) => {
-  if (moreMenuOpen && !e.target.closest(".more-wrap")) { moreMenuOpen = null; renderRoute(currentView); }
+  if (moreMenuOpen && !e.target.closest(".more-wrap") && !e.target.closest(".more-dropdown")) {
+    moreMenuOpen = null;
+    renderRoute(currentView);
+  }
+  if (seasonMoreOpen && !e.target.closest(".season-more-wrap") && !e.target.closest(".season-more-dropdown")) {
+    seasonMoreOpen = null;
+    renderRoute(currentView);
+  }
 });
 
-search.addEventListener("input", () => { navStack = []; renderHome(); });
+search.addEventListener("input", () => { moreMenuOpen = null; seasonMoreOpen = null; navStack = []; renderHome(); });
 window.addEventListener("keydown", e => { if (e.key === "Escape" && currentView.type !== "home") goBackSmart(); });
 loadLibrary();

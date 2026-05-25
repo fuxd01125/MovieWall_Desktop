@@ -11,11 +11,7 @@ def runtime_dir():
 
 APP_DIR = runtime_dir()
 CONFIG_FILE = APP_DIR / "config.json"
-LIBRARY_FILE = APP_DIR / "library.json"
 METADATA_CACHE_FILE = APP_DIR / "metadata_cache.json"
-RATINGS_FILE = APP_DIR / "ratings.json"
-HISTORY_FILE = APP_DIR / "history.json"
-FAVORITES_FILE = APP_DIR / "favorites.json"
 
 # Auto-init DB on import
 from moviewall.database import init_db
@@ -37,38 +33,6 @@ def write_json(path: Path, data):
 
 def load_config():
     return read_json(CONFIG_FILE, {})
-
-
-def load_library():
-    return read_json(LIBRARY_FILE, {"items": [], "stats": {}})
-
-
-def save_library(data):
-    write_json(LIBRARY_FILE, data)
-
-
-def read_ratings():
-    return read_json(RATINGS_FILE, {})
-
-
-def write_ratings(data):
-    write_json(RATINGS_FILE, data)
-
-
-def read_history():
-    return read_json(HISTORY_FILE, {})
-
-
-def write_history(data):
-    write_json(HISTORY_FILE, data)
-
-
-def read_favorites():
-    return read_json(FAVORITES_FILE, [])
-
-
-def write_favorites(data):
-    write_json(FAVORITES_FILE, data)
 
 
 def load_players():

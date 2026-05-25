@@ -1,5 +1,6 @@
 """Scanner — walks media folders, updates database."""
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from moviewall.config import load_config, APP_DIR
@@ -180,12 +181,22 @@ def scan_library(progress_callback=None):
         else:
             cat_items = _scan_shows(folder, folder_name, display)
 
-        # Attach metadata (TMDB + Douban → DB separate)
-        for i, item in enumerate(cat_items):
-            if progress_callback:
-                progress_callback((idx + (i + 1) / len(cat_items)) / total if total else 0,
-                                  f"获取元数据: {item.get('display_title') or item.get('title')}")
-            attach_all_metadata(item)
+        # Attach metadata in parallel (TMDB + Douban → DB separate)
+        if cat_items:
+            max_workers = min(5, len(cat_items))
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = {pool.submit(attach_all_metadata, item): item for item in cat_items}
+                done = 0
+                for future in as_completed(futures):
+                    done += 1
+                    if progress_callback:
+                        item = futures[future]
+                        progress_callback((idx + done / len(cat_items)) / total if total else 0,
+                                          f"元数据: {item.get('display_title') or item.get('title')}")
+                    try:
+                        future.result()
+                    except Exception:
+                        pass
 
         all_items.extend(cat_items)
 

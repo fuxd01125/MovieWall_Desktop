@@ -157,9 +157,28 @@ def tmdb_request(endpoint, params):
         return None
     params = dict(params or {})
     params["api_key"] = key
+
+    from moviewall.config import METADATA_CACHE_FILE, read_json, write_json
+    ck = f"tmdb:{endpoint}"
+    try:
+        cache = read_json(METADATA_CACHE_FILE, {})
+        cached = cache.get(ck)
+        ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
+        if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < ttl:
+            return cached["data"]
+    except Exception:
+        cache = {}
+
     url = f"https://api.themoviedb.org/3/{endpoint}?{urllib.parse.urlencode(params)}"
     try:
         with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "MovieWall/12"}), timeout=12) as resp:
-            return json.loads(resp.read().decode("utf-8")) if resp.status == 200 else None
+            data = json.loads(resp.read().decode("utf-8")) if resp.status == 200 else None
+            if data:
+                try:
+                    cache[ck] = {"_cached_at": time.time(), "data": data}
+                    write_json(METADATA_CACHE_FILE, cache)
+                except Exception:
+                    pass
+            return data
     except Exception:
         return None
