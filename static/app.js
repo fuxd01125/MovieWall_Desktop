@@ -870,17 +870,24 @@ async function saveDoubanId() {
   const id = settingDoubanId.trim();
   const itemId = settingDoubanItemId;
   if (!itemId) return;
-  const res = await fetch("/api/metadata/douban/" + itemId, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({douban_id: id})});
+  const rating = document.getElementById("doubanRating")?.value?.trim();
+  const synopsis = document.getElementById("doubanSynopsis")?.value?.trim();
+  const body = {douban_id: id};
+  if (rating) body.rating = parseFloat(rating);
+  if (synopsis) body.synopsis = synopsis;
+  const res = await fetch("/api/metadata/douban/" + itemId, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
   const data = await res.json();
   if (data.douban) {
     showToast("豆瓣数据已更新");
   } else if (id) {
-    showToast("未找到该豆瓣ID的数据", 3000);
+    showToast("未找到该豆瓣ID的数据（已保存ID，可手动输入评分）", 4000);
   } else {
     showToast("已清除豆瓣ID");
   }
   settingDoubanItemId = "";
   settingDoubanId = "";
+  const libRes = await fetch("/api/library");
+  library = await libRes.json();
   renderRoute(currentView);
 }
 
@@ -911,9 +918,14 @@ function renderSettings() {
   if (settingDoubanItemId) {
     const item = findItem(settingDoubanItemId);
     const itemName = item ? titleOf(item) : settingDoubanItemId;
+    const itemD = item ? douban(item) : {};
+    const curRating = itemD.rating || "";
+    const curSynopsis = itemD.synopsis || "";
     doubanSection = '<div class="settings-section"><div class="section-header"><h2>豆瓣关联</h2></div>'
-      + '<p class="settings-hint">为 "' + escapeHtml(itemName) + '" 手动设置豆瓣 ID。可在豆瓣网页 URL 中找到，如 <code>https://movie.douban.com/subject/<strong>123456</strong>/</code></p>'
-      + '<div class="settings-cat-row"><input id="doubanIdInput" class="sc-folder" value="' + escapeHtml(settingDoubanId) + '" placeholder="输入豆瓣 ID 数字"><button onclick="saveDoubanId()">保存</button><button class="ghost" onclick="saveDoubanIdAndUpdate()">保存并立即更新</button><button class="ghost" onclick="settingDoubanItemId=\'\';renderSettings()">取消</button></div>'
+      + '<p class="settings-hint">豆瓣目前无法自动爬取数据，请输入豆瓣 ID 后手动填写评分和剧情简介。</p>'
+      + '<p class="settings-hint">豆瓣 ID 可在豆瓣网页 URL 中找到，如 <code>https://movie.douban.com/subject/<strong>10440076</strong>/</code></p>'
+      + '<div class="settings-cat-row"><input id="doubanIdInput" style="flex:0.5" value="' + escapeHtml(settingDoubanId) + '" placeholder="豆瓣 ID"><input id="doubanRating" style="flex:0.2" value="' + escapeHtml(String(curRating)) + '" placeholder="评分 0-10"><button onclick="saveDoubanId()">保存</button><button class="ghost" onclick="saveDoubanIdAndUpdate()">保存并爬取</button><button class="ghost" onclick="settingDoubanItemId=\'\';renderSettings()">取消</button></div>'
+      + '<div class="settings-cat-row" style="margin-top:6px"><textarea id="doubanSynopsis" style="flex:1;min-height:60px;padding:8px;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--text);font-family:var(--font);font-size:13px;resize:vertical" placeholder="剧情简介（可选）">' + escapeHtml(curSynopsis) + '</textarea></div>'
       + '</div>';
   }
 

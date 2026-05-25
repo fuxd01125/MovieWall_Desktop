@@ -280,10 +280,14 @@ def register_routes(app):
     def api_set_douban_id(media_id):
         data = request.get_json(force=True)
         douban_id = data.get("douban_id", "").strip()
+        manual_rating = data.get("rating")
+        manual_synopsis = data.get("synopsis", "").strip()
         set_douban_id_override(media_id, douban_id)
         item = find_media_by_id(media_id)
         douban_data = None
+
         if douban_id:
+            # Try auto-fetch (may fail due to Douban WAF)
             douban_data = fetch_douban_by_id(douban_id)
             if douban_data and item:
                 save_douban_meta(media_id, douban_data)
@@ -293,6 +297,30 @@ def register_routes(app):
                     if tm:
                         tm["overview"] = douban_data["synopsis"]
                         save_tmdb_meta(media_id, {**tm, "_season_data": tm.get("_season_data")})
+
+        # If auto-fetch failed or user provided manual data, save manually
+        if manual_rating is not None or manual_synopsis:
+            from moviewall.database import get_conn
+            conn = get_conn()
+            existing = conn.execute("SELECT * FROM metadata_douban WHERE media_id=?", (media_id,)).fetchone()
+            if existing:
+                rating = manual_rating if manual_rating is not None else existing["rating"]
+                synopsis = manual_synopsis if manual_synopsis else existing["synopsis"]
+                conn.execute("""UPDATE metadata_douban SET rating=?, synopsis=?, douban_id=? WHERE media_id=?""",
+                             (rating, synopsis, douban_id, media_id))
+            else:
+                conn.execute("""INSERT INTO metadata_douban (media_id,douban_id,rating,synopsis,fetched_at)
+                                VALUES (?,?,?,?,?)""",
+                             (media_id, douban_id, manual_rating, manual_synopsis, time.time()))
+            conn.commit()
+            conn.close()
+            if manual_synopsis and item:
+                from moviewall.database import load_tmdb_meta, save_tmdb_meta
+                tm = load_tmdb_meta(media_id)
+                if tm:
+                    tm["overview"] = manual_synopsis
+                    save_tmdb_meta(media_id, {**tm, "_season_data": tm.get("_season_data")})
+
         return jsonify({"ok": True, "douban": douban_data})
 
     @app.route("/api/metadata/douban/<media_id>", methods=["DELETE"])
