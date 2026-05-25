@@ -163,7 +163,7 @@ def upsert_media(item):
     conn.execute("""
         INSERT INTO media (id,media_type,title,display_title,year,category_key,category_name,
                            folder,path,filename,poster,thumb,season_count,episode_count,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE((SELECT created_at FROM media WHERE id=?),now),now)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
             title=excluded.title, display_title=excluded.display_title, year=excluded.year,
             category_key=excluded.category_key, category_name=excluded.category_name,
@@ -177,7 +177,8 @@ def upsert_media(item):
         item.get("folder"), item.get("path"), item.get("filename"),
         item.get("poster"), item.get("thumb"),
         item.get("season_count", 0), item.get("episode_count", 0),
-        item["id"],  # for created_at coalesce
+        now,  # created_at
+        now,  # updated_at
     ))
     conn.commit()
     conn.close()

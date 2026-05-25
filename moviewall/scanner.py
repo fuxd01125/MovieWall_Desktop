@@ -165,8 +165,6 @@ def scan_library(progress_callback=None):
     # Wipe DB media — we re-insert everything fresh
     delete_all_media()
 
-    total_cats = len([c for c in categories.values() if (root / c).exists() if isinstance(list(categories.keys())[0], str)]) or 1
-    # Actually count real folders
     existing_cats = [(fn, cat) for fn, cat in categories.items() if (root / fn).exists()]
     total = len(existing_cats)
 
