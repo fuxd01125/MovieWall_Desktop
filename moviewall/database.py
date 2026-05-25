@@ -2,7 +2,6 @@
 import json
 import sqlite3
 import time
-from pathlib import Path
 
 from moviewall.config import APP_DIR
 
@@ -145,15 +144,20 @@ def get_conn():
 
 def init_db():
     conn = get_conn()
-    conn.executescript(SCHEMA)
-    # Migrate: add columns that might be missing from older DB
-    for col in ("rating_count", "synopsis", "poster_url", "cast_info", "air_date"):
-        try:
-            conn.execute(f"ALTER TABLE metadata_douban_seasons ADD COLUMN {col} TEXT")
-        except sqlite3.OperationalError:
-            pass  # column already exists
-    conn.commit()
-    conn.close()
+    try:
+        conn.executescript(SCHEMA)
+        # Migrate: add columns that might be missing from older DB
+        for col in ("rating_count", "synopsis", "poster_url", "cast_info", "air_date"):
+            try:
+                conn.execute(f"ALTER TABLE metadata_douban_seasons ADD COLUMN {col} TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def scrub_row(row):
@@ -171,133 +175,174 @@ def scrub_rows(rows):
 
 def upsert_media(item):
     conn = get_conn()
-    now = time.time()
-    conn.execute("""
-        INSERT INTO media (id,media_type,title,display_title,year,category_key,category_name,
-                           folder,path,filename,poster,thumb,season_count,episode_count,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(id) DO UPDATE SET
-            title=excluded.title, display_title=excluded.display_title, year=excluded.year,
-            category_key=excluded.category_key, category_name=excluded.category_name,
-            folder=excluded.folder, path=excluded.path, filename=excluded.filename,
-            poster=excluded.poster, thumb=excluded.thumb,
-            season_count=excluded.season_count, episode_count=excluded.episode_count,
-            updated_at=excluded.updated_at
-    """, (
-        item["id"], item.get("type"), item.get("title"), item.get("display_title"),
-        item.get("year"), item.get("category_key"), item.get("category_name"),
-        item.get("folder"), item.get("path"), item.get("filename"),
-        item.get("poster"), item.get("thumb"),
-        item.get("season_count", 0), item.get("episode_count", 0),
-        now,  # created_at
-        now,  # updated_at
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        now = time.time()
+        conn.execute("""
+            INSERT INTO media (id,media_type,title,display_title,year,category_key,category_name,
+                               folder,path,filename,poster,thumb,season_count,episode_count,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title, display_title=excluded.display_title, year=excluded.year,
+                category_key=excluded.category_key, category_name=excluded.category_name,
+                folder=excluded.folder, path=excluded.path, filename=excluded.filename,
+                poster=excluded.poster, thumb=excluded.thumb,
+                season_count=excluded.season_count, episode_count=excluded.episode_count,
+                updated_at=excluded.updated_at
+        """, (
+            item["id"], item.get("type"), item.get("title"), item.get("display_title"),
+            item.get("year"), item.get("category_key"), item.get("category_name"),
+            item.get("folder"), item.get("path"), item.get("filename"),
+            item.get("poster"), item.get("thumb"),
+            item.get("season_count", 0), item.get("episode_count", 0),
+            now,  # created_at
+            now,  # updated_at
+        ))
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def upsert_season(show_id, season):
     conn = get_conn()
-    conn.execute("""
-        INSERT INTO seasons (id,show_id,season_number,title,folder,poster,episode_count)
-        VALUES (?,?,?,?,?,?,?)
-        ON CONFLICT(id) DO UPDATE SET
-            title=excluded.title, folder=excluded.folder, poster=excluded.poster,
-            episode_count=excluded.episode_count
-    """, (
-        season["id"], show_id, season.get("season_number"), season.get("title"),
-        season.get("folder"), season.get("poster"), season.get("episode_count", 0)
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO seasons (id,show_id,season_number,title,folder,poster,episode_count)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title, folder=excluded.folder, poster=excluded.poster,
+                episode_count=excluded.episode_count
+        """, (
+            season["id"], show_id, season.get("season_number"), season.get("title"),
+            season.get("folder"), season.get("poster"), season.get("episode_count", 0)
+        ))
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def upsert_episode(show_id, season_id, ep):
     conn = get_conn()
-    conn.execute("""
-        INSERT INTO episodes (id,show_id,season_id,season_number,episode_number,title,filename,path,folder,thumb)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(id) DO UPDATE SET
-            title=excluded.title, filename=excluded.filename, path=excluded.path,
-            folder=excluded.folder, thumb=excluded.thumb
-    """, (
-        ep["id"], show_id, season_id, ep.get("season_number"), ep.get("episode_number"),
-        ep.get("title"), ep.get("filename"), ep.get("path"), ep.get("folder"), ep.get("thumb")
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO episodes (id,show_id,season_id,season_number,episode_number,title,filename,path,folder,thumb)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title, filename=excluded.filename, path=excluded.path,
+                folder=excluded.folder, thumb=excluded.thumb
+        """, (
+            ep["id"], show_id, season_id, ep.get("season_number"), ep.get("episode_number"),
+            ep.get("title"), ep.get("filename"), ep.get("path"), ep.get("folder"), ep.get("thumb")
+        ))
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def delete_media(media_id):
     conn = get_conn()
-    conn.execute("DELETE FROM episodes WHERE show_id=?", (media_id,))
-    conn.execute("DELETE FROM seasons WHERE show_id=?", (media_id,))
-    conn.execute("DELETE FROM metadata_tmdb WHERE media_id=?", (media_id,))
-    conn.execute("DELETE FROM metadata_douban WHERE media_id=?", (media_id,))
-    conn.execute("DELETE FROM metadata_douban_seasons WHERE show_id=?", (media_id,))
-    conn.execute("DELETE FROM history WHERE media_id=?", (media_id,))
-    conn.execute("DELETE FROM favorites WHERE media_id=?", (media_id,))
-    conn.execute("DELETE FROM ratings WHERE media_id=?", (media_id,))
-    conn.execute("DELETE FROM media WHERE id=?", (media_id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("DELETE FROM episodes WHERE show_id=?", (media_id,))
+        conn.execute("DELETE FROM seasons WHERE show_id=?", (media_id,))
+        conn.execute("DELETE FROM metadata_tmdb WHERE media_id=?", (media_id,))
+        conn.execute("DELETE FROM metadata_douban WHERE media_id=?", (media_id,))
+        conn.execute("DELETE FROM metadata_douban_seasons WHERE show_id=?", (media_id,))
+        conn.execute("DELETE FROM history WHERE media_id=?", (media_id,))
+        conn.execute("DELETE FROM favorites WHERE media_id=?", (media_id,))
+        conn.execute("DELETE FROM ratings WHERE media_id=?", (media_id,))
+        conn.execute("DELETE FROM media WHERE id=?", (media_id,))
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def delete_all_media():
     """Delete only media and metadata — preserve user data (ratings, favorites, history)."""
     conn = get_conn()
-    for t in ("episodes","seasons","metadata_douban_seasons","metadata_tmdb","metadata_douban","media"):
-        conn.execute(f"DELETE FROM {t}")
-    conn.commit()
-    conn.close()
+    try:
+        tables = ("episodes","seasons","metadata_douban_seasons","metadata_tmdb","metadata_douban","media")
+        for t in tables:
+            conn.execute(f"DELETE FROM {t}")
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 # ── Metadata storage (separate tables) ──────────────────────────────
 
 def save_tmdb_meta(media_id, data):
     conn = get_conn()
-    season_data = data.pop("_season_data", None)
-    conn.execute("""
-        INSERT INTO metadata_tmdb (media_id,tmdb_id,title,original_title,overview,rating,date,
-                                   genres,poster_url,backdrop_url,season_data,raw,fetched_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(media_id) DO UPDATE SET
-            tmdb_id=excluded.tmdb_id, title=excluded.title, original_title=excluded.original_title,
-            overview=excluded.overview, rating=excluded.rating, date=excluded.date,
-            genres=excluded.genres, poster_url=excluded.poster_url, backdrop_url=excluded.backdrop_url,
-            season_data=COALESCE(NULLIF(excluded.season_data,''),metadata_tmdb.season_data),
-            raw=excluded.raw, fetched_at=excluded.fetched_at
-    """, (
-        media_id,
-        data.get("tmdb_id"),
-        data.get("title"),
-        data.get("original_title"),
-        data.get("overview"),
-        data.get("rating"),
-        data.get("date"),
-        json.dumps(data.get("genres", []), ensure_ascii=False),
-        data.get("poster_url"),
-        data.get("backdrop_url"),
-        json.dumps(season_data, ensure_ascii=False) if season_data else None,
-        json.dumps(data, ensure_ascii=False),
-        time.time(),
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        season_data = data.get("_season_data")
+        conn.execute("""
+            INSERT INTO metadata_tmdb (media_id,tmdb_id,title,original_title,overview,rating,date,
+                                       genres,poster_url,backdrop_url,season_data,raw,fetched_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(media_id) DO UPDATE SET
+                tmdb_id=excluded.tmdb_id, title=excluded.title, original_title=excluded.original_title,
+                overview=excluded.overview, rating=excluded.rating, date=excluded.date,
+                genres=excluded.genres, poster_url=excluded.poster_url, backdrop_url=excluded.backdrop_url,
+                season_data=COALESCE(NULLIF(excluded.season_data,''),metadata_tmdb.season_data),
+                raw=excluded.raw, fetched_at=excluded.fetched_at
+        """, (
+            media_id,
+            data.get("tmdb_id"),
+            data.get("title"),
+            data.get("original_title"),
+            data.get("overview"),
+            data.get("rating"),
+            data.get("date"),
+            json.dumps(data.get("genres", []), ensure_ascii=False),
+            data.get("poster_url"),
+            data.get("backdrop_url"),
+            json.dumps(season_data, ensure_ascii=False) if season_data else None,
+            json.dumps(data, ensure_ascii=False),
+            time.time(),
+        ))
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def load_tmdb_meta(media_id):
     conn = get_conn()
-    row = conn.execute("SELECT * FROM metadata_tmdb WHERE media_id=?", (media_id,)).fetchone()
-    conn.close()
+    try:
+        row = conn.execute("SELECT * FROM metadata_tmdb WHERE media_id=?", (media_id,)).fetchone()
+    except:
+        raise
+    finally:
+        conn.close()
     if row is None:
         return {}
     r = dict(row)
     data = {}
     if r.get("genres"):
-        data["genres"] = json.loads(r["genres"])
+        try:
+            data["genres"] = json.loads(r["genres"])
+        except (json.JSONDecodeError, TypeError):
+            data["genres"] = []
     if r.get("season_data"):
-        data["_season_data"] = json.loads(r["season_data"])
+        try:
+            data["_season_data"] = json.loads(r["season_data"])
+        except (json.JSONDecodeError, TypeError):
+            data["_season_data"] = {}
     for k in ("tmdb_id","title","original_title","overview","rating","date","poster_url","backdrop_url","fetched_at"):
         if r.get(k) is not None:
             data[k] = r[k]
@@ -306,38 +351,47 @@ def load_tmdb_meta(media_id):
 
 def save_douban_meta(media_id, data):
     conn = get_conn()
-    conn.execute("""
-        INSERT INTO metadata_douban (media_id,douban_id,rating,star_count,rating_count,abstract,abstract_2,synopsis,raw,fetched_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(media_id) DO UPDATE SET
-            douban_id=COALESCE(NULLIF(excluded.douban_id,''), metadata_douban.douban_id),
-            rating=COALESCE(excluded.rating, metadata_douban.rating),
-            star_count=COALESCE(excluded.star_count, metadata_douban.star_count),
-            rating_count=COALESCE(excluded.rating_count, metadata_douban.rating_count),
-            abstract=COALESCE(NULLIF(excluded.abstract,''), metadata_douban.abstract),
-            abstract_2=COALESCE(NULLIF(excluded.abstract_2,''), metadata_douban.abstract_2),
-            synopsis=COALESCE(NULLIF(excluded.synopsis,''), metadata_douban.synopsis),
-            raw=excluded.raw, fetched_at=excluded.fetched_at
-    """, (
-        media_id,
-        data.get("douban_id"),
-        data.get("rating"),
-        data.get("star_count"),
-        data.get("rating_count"),
-        data.get("abstract"),
-        data.get("abstract_2"),
-        data.get("synopsis"),
-        json.dumps(data, ensure_ascii=False),
-        time.time(),
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO metadata_douban (media_id,douban_id,rating,star_count,rating_count,abstract,abstract_2,synopsis,raw,fetched_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(media_id) DO UPDATE SET
+                douban_id=COALESCE(NULLIF(excluded.douban_id,''), metadata_douban.douban_id),
+                rating=COALESCE(excluded.rating, metadata_douban.rating),
+                star_count=COALESCE(excluded.star_count, metadata_douban.star_count),
+                rating_count=COALESCE(excluded.rating_count, metadata_douban.rating_count),
+                abstract=COALESCE(NULLIF(excluded.abstract,''), metadata_douban.abstract),
+                abstract_2=COALESCE(NULLIF(excluded.abstract_2,''), metadata_douban.abstract_2),
+                synopsis=COALESCE(NULLIF(excluded.synopsis,''), metadata_douban.synopsis),
+                raw=excluded.raw, fetched_at=excluded.fetched_at
+        """, (
+            media_id,
+            data.get("douban_id"),
+            data.get("rating"),
+            data.get("star_count"),
+            data.get("rating_count"),
+            data.get("abstract"),
+            data.get("abstract_2"),
+            data.get("synopsis"),
+            json.dumps(data, ensure_ascii=False),
+            time.time(),
+        ))
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def load_douban_meta(media_id):
     conn = get_conn()
-    row = conn.execute("SELECT * FROM metadata_douban WHERE media_id=?", (media_id,)).fetchone()
-    conn.close()
+    try:
+        row = conn.execute("SELECT * FROM metadata_douban WHERE media_id=?", (media_id,)).fetchone()
+    except:
+        raise
+    finally:
+        conn.close()
     if row is None:
         return {}
     r = dict(row)
@@ -350,32 +404,41 @@ def load_douban_meta(media_id):
 
 def save_douban_season_meta(season_id, show_id, season_number, data):
     conn = get_conn()
-    conn.execute("""
-        INSERT INTO metadata_douban_seasons (season_id,show_id,season_number,douban_id,rating,star_count,rating_count,synopsis,poster_url,cast_info,air_date,fetched_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(season_id) DO UPDATE SET
-            douban_id=excluded.douban_id, rating=excluded.rating, star_count=excluded.star_count,
-            rating_count=excluded.rating_count, synopsis=excluded.synopsis, poster_url=excluded.poster_url,
-            cast_info=excluded.cast_info, air_date=excluded.air_date, fetched_at=excluded.fetched_at
-    """, (
-        season_id, show_id, season_number,
-        data.get("douban_id"), data.get("rating"), data.get("star_count"),
-        data.get("rating_count"), data.get("synopsis"), data.get("poster_url"),
-        data.get("cast_info"), data.get("air_date"),
-        time.time(),
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO metadata_douban_seasons (season_id,show_id,season_number,douban_id,rating,star_count,rating_count,synopsis,poster_url,cast_info,air_date,fetched_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(season_id) DO UPDATE SET
+                douban_id=excluded.douban_id, rating=excluded.rating, star_count=excluded.star_count,
+                rating_count=excluded.rating_count, synopsis=excluded.synopsis, poster_url=excluded.poster_url,
+                cast_info=excluded.cast_info, air_date=excluded.air_date, fetched_at=excluded.fetched_at
+        """, (
+            season_id, show_id, season_number,
+            data.get("douban_id"), data.get("rating"), data.get("star_count"),
+            data.get("rating_count"), data.get("synopsis"), data.get("poster_url"),
+            data.get("cast_info"), data.get("air_date"),
+            time.time(),
+        ))
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def load_douban_season_meta(show_id):
     conn = get_conn()
-    rows = conn.execute(
-        """SELECT season_number,rating,star_count,rating_count,douban_id,synopsis,poster_url,cast_info,air_date
-           FROM metadata_douban_seasons WHERE show_id=?""",
-        (show_id,)
-    ).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute(
+            """SELECT season_number,rating,star_count,rating_count,douban_id,synopsis,poster_url,cast_info,air_date
+               FROM metadata_douban_seasons WHERE show_id=?""",
+            (show_id,)
+        ).fetchall()
+    except:
+        raise
+    finally:
+        conn.close()
     return {str(r["season_number"]): {
         "rating": r["rating"], "star_count": r["star_count"],
         "rating_count": r["rating_count"], "douban_id": r["douban_id"],
@@ -388,30 +451,48 @@ def load_douban_season_meta(show_id):
 
 def load_all_ratings():
     conn = get_conn()
-    rows = conn.execute("SELECT media_id,score,rated_at FROM ratings").fetchall()
-    conn.close()
+    try:
+        rows = conn.execute("SELECT media_id,score,rated_at FROM ratings").fetchall()
+    except:
+        raise
+    finally:
+        conn.close()
     return {r["media_id"]: {"score": r["score"], "rated_at": r["rated_at"]} for r in rows}
 
 
 def save_rating(media_id, score):
     conn = get_conn()
-    conn.execute("INSERT OR REPLACE INTO ratings (media_id,score,rated_at) VALUES (?,?,?)",
-                 (media_id, score, time.time()))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("INSERT OR REPLACE INTO ratings (media_id,score,rated_at) VALUES (?,?,?)",
+                     (media_id, score, time.time()))
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def delete_rating(media_id):
     conn = get_conn()
-    conn.execute("DELETE FROM ratings WHERE media_id=?", (media_id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("DELETE FROM ratings WHERE media_id=?", (media_id,))
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def load_all_history():
     conn = get_conn()
-    rows = conn.execute("SELECT * FROM history ORDER BY played_at DESC").fetchall()
-    conn.close()
+    try:
+        rows = conn.execute("SELECT * FROM history ORDER BY played_at DESC").fetchall()
+    except:
+        raise
+    finally:
+        conn.close()
     result = {}
     for r in rows:
         d = dict(r)
@@ -423,41 +504,54 @@ def load_all_history():
 
 def save_history(entry):
     conn = get_conn()
-    conn.execute("""
-        INSERT OR REPLACE INTO history (media_id,episode_id,path,title,show_title,season_number,episode_number,label,short_label,played_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
-    """, (
-        entry.get("media_id"), entry.get("episode_id"), entry.get("path"),
-        entry.get("title"), entry.get("show_title"),
-        entry.get("season_number"), entry.get("episode_number"),
-        entry.get("label"), entry.get("short_label"),
-        entry.get("played_at") or time.time(),
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT OR REPLACE INTO history (media_id,episode_id,path,title,show_title,season_number,episode_number,label,short_label,played_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        """, (
+            entry.get("media_id"), entry.get("episode_id"), entry.get("path"),
+            entry.get("title"), entry.get("show_title"),
+            entry.get("season_number"), entry.get("episode_number"),
+            entry.get("label"), entry.get("short_label"),
+            entry.get("played_at") or time.time(),
+        ))
+        conn.commit()
+    except:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def load_all_favorites():
     conn = get_conn()
-    rows = conn.execute("SELECT media_id FROM favorites").fetchall()
-    conn.close()
+    try:
+        rows = conn.execute("SELECT media_id FROM favorites").fetchall()
+    except:
+        raise
+    finally:
+        conn.close()
     return [r["media_id"] for r in rows]
 
 
 def toggle_favorite(media_id):
     conn = get_conn()
-    existing = conn.execute("SELECT media_id FROM favorites WHERE media_id=?", (media_id,)).fetchone()
-    if existing:
-        conn.execute("DELETE FROM favorites WHERE media_id=?", (media_id,))
-        conn.commit()
+    try:
+        existing = conn.execute("SELECT media_id FROM favorites WHERE media_id=?", (media_id,)).fetchone()
+        if existing:
+            conn.execute("DELETE FROM favorites WHERE media_id=?", (media_id,))
+            conn.commit()
+            return "removed"
+        else:
+            conn.execute("INSERT OR IGNORE INTO favorites (media_id,favorited_at) VALUES (?,?)",
+                         (media_id, time.time()))
+            conn.commit()
+            return "added"
+    except:
+        conn.rollback()
+        raise
+    finally:
         conn.close()
-        return "removed"
-    else:
-        conn.execute("INSERT OR IGNORE INTO favorites (media_id,favorited_at) VALUES (?,?)",
-                     (media_id, time.time()))
-        conn.commit()
-        conn.close()
-        return "added"
 
 
 # ── Library query (for API) ─────────────────────────────────────────
@@ -465,7 +559,13 @@ def toggle_favorite(media_id):
 def build_library_dict():
     """Return the full library as a dict, compatible with the old JSON API."""
     conn = get_conn()
-    media_rows = conn.execute("SELECT * FROM media ORDER BY title COLLATE NOCASE").fetchall()
+    try:
+        media_rows = conn.execute("SELECT * FROM media ORDER BY title COLLATE NOCASE").fetchall()
+    except:
+        raise
+    finally:
+        conn.close()
+
     items = []
     for m in media_rows:
         item = dict(m)
@@ -482,13 +582,19 @@ def build_library_dict():
 
         # Attach seasons + episodes for shows
         if item["type"] == "show":
-            seasons = scrub_rows(conn.execute(
-                "SELECT * FROM seasons WHERE show_id=? ORDER BY season_number", (item["id"],)
-            ).fetchall())
-            for s in seasons:
-                s["episodes"] = scrub_rows(conn.execute(
-                    "SELECT * FROM episodes WHERE season_id=? ORDER BY episode_number", (s["id"],)
+            conn2 = get_conn()
+            try:
+                seasons = scrub_rows(conn2.execute(
+                    "SELECT * FROM seasons WHERE show_id=? ORDER BY season_number", (item["id"],)
                 ).fetchall())
+                for s in seasons:
+                    s["episodes"] = scrub_rows(conn2.execute(
+                        "SELECT * FROM episodes WHERE season_id=? ORDER BY episode_number", (s["id"],)
+                    ).fetchall())
+            except:
+                raise
+            finally:
+                conn2.close()
             item["seasons"] = seasons
             # Attach per-season douban ratings
             ds = load_douban_season_meta(item["id"])
@@ -496,7 +602,6 @@ def build_library_dict():
                 item["_season_meta"] = ds
 
         items.append(item)
-    conn.close()
 
     stats = {
         "movies": sum(1 for i in items if i["type"] == "movie"),

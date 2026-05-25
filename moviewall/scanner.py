@@ -7,7 +7,7 @@ from moviewall.config import load_config, APP_DIR
 from moviewall.constants import VIDEO_EXTS
 from moviewall.utils import (
     stable_id, clean_title, parse_year, parse_season_number, parse_episode_number,
-    pretty_season, pretty_episode, generate_video_image, ffmpeg_exe,
+    pretty_season, pretty_episode, generate_video_image,
 )
 from moviewall.artwork import find_movie_poster, find_show_poster, find_season_poster, find_episode_thumb
 from moviewall.metadata import attach_all_metadata

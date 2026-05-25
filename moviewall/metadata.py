@@ -1,4 +1,5 @@
 """Metadata provider — fetches TMDB + Douban data, stores separately in DB."""
+import threading
 import time
 from pathlib import Path
 from urllib.request import urlopen
@@ -6,6 +7,8 @@ from urllib.request import urlopen
 from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE
 from moviewall.database import save_tmdb_meta, save_douban_meta, save_douban_season_meta, get_conn
 from moviewall.utils import normalize_key, tmdb_request, tmdb_image
+
+_cache_write_lock = threading.Lock()
 
 
 # ── TMDB ────────────────────────────────────────────────────────────
@@ -15,7 +18,9 @@ def get_tmdb_metadata(title, year, media_type):
     if not cfg.get("metadata_enabled", True) or not (cfg.get("tmdb_api_key") or "").strip():
         return {}
     lang = cfg.get("tmdb_language", "zh-CN") or "zh-CN"
-    cache = read_json(METADATA_CACHE_FILE, {})
+    global _cache_write_lock
+    with _cache_write_lock:
+        cache = read_json(METADATA_CACHE_FILE, {})
     key = f"{media_type}:{normalize_key(title)}:{year}:{lang}"
     cached = cache.get(key)
     if cached and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
@@ -27,8 +32,10 @@ def get_tmdb_metadata(title, year, media_type):
         params["year" if media_type == "movie" else "first_air_date_year"] = year
     results = (tmdb_request(endpoint, params) or {}).get("results") or []
     if not results:
-        cache[key] = {"_cached_at": time.time(), "data": {}}
-        write_json(METADATA_CACHE_FILE, cache)
+        with _cache_write_lock:
+            cache = read_json(METADATA_CACHE_FILE, {})
+            cache[key] = {"_cached_at": time.time(), "data": {}}
+            write_json(METADATA_CACHE_FILE, cache)
         return {}
 
     best = results[0]
@@ -47,27 +54,36 @@ def get_tmdb_metadata(title, year, media_type):
         "poster_url": tmdb_image(details.get("poster_path") or best.get("poster_path"), "w500"),
         "backdrop_url": tmdb_image(details.get("backdrop_path") or best.get("backdrop_path"), "w1280"),
     }
-    cache[key] = {"_cached_at": time.time(), "data": data}
-    write_json(METADATA_CACHE_FILE, cache)
+    with _cache_write_lock:
+        cache = read_json(METADATA_CACHE_FILE, {})
+        cache[key] = {"_cached_at": time.time(), "data": data}
+        write_json(METADATA_CACHE_FILE, cache)
     return data
 
 
 def fetch_tmdb_seasons(tmdb_id, seasons_list, lang):
     """Fetch per-season TMDB metadata (rating, air_date, overview, poster)."""
-    cache = read_json(METADATA_CACHE_FILE, {})
+    global _cache_write_lock
+    with _cache_write_lock:
+        cache = read_json(METADATA_CACHE_FILE, {})
     season_map = {}
     for season in seasons_list:
         sn = season.get("season_number")
         if not sn:
             continue
         ck = f"season:{tmdb_id}:{sn}:{lang}"
-        cached = cache.get(ck)
-        if cached and time.time() - cached.get("_cached_at", 0) < int(load_config().get("metadata_cache_days", 30)) * 86400:
-            sdata = cached.get("data", {})
-        else:
+        with _cache_write_lock:
+            cached = cache.get(ck)
+            if cached and time.time() - cached.get("_cached_at", 0) < int(load_config().get("metadata_cache_days", 30)) * 86400:
+                sdata = cached.get("data", {})
+            else:
+                sdata = None
+        if sdata is None:
             sdata = tmdb_request(f"tv/{tmdb_id}/season/{sn}", {"language": lang}) or {}
             if sdata:
-                cache[ck] = {"_cached_at": time.time(), "data": sdata}
+                with _cache_write_lock:
+                    cache = read_json(METADATA_CACHE_FILE, {})
+                    cache[ck] = {"_cached_at": time.time(), "data": sdata}
         if sdata:
             entry = {}
             if sdata.get("vote_average"):
@@ -80,7 +96,6 @@ def fetch_tmdb_seasons(tmdb_id, seasons_list, lang):
                 entry["poster_url"] = tmdb_image(sdata["poster_path"], "w500")
             if entry:
                 season_map[str(sn)] = entry
-    write_json(METADATA_CACHE_FILE, cache)
     return season_map
 
 
@@ -98,7 +113,6 @@ def attach_all_metadata(item):
     # ── TMDB ─────────────────────────────────────────────────────
     tmdb_data = get_tmdb_metadata(item.get("title", ""), item.get("year", ""), media_type)
     if tmdb_data:
-        # Store in DB separately
         season_data = {}
         if item.get("type") == "show" and tmdb_data.get("tmdb_id"):
             lang = cfg.get("tmdb_language", "zh-CN") or "zh-CN"
@@ -108,8 +122,7 @@ def attach_all_metadata(item):
             tmdb_store["_season_data"] = season_data
         save_tmdb_meta(media_id, tmdb_store)
 
-        # Attach to item for API
-        meta["tmdb"] = tmdb_data
+        meta["tmdb"] = dict(tmdb_data)
         if tmdb_data.get("title"):
             item["display_title"] = tmdb_data["title"]
 
@@ -128,11 +141,11 @@ def attach_all_metadata(item):
 
         if douban_data:
             save_douban_meta(media_id, douban_data)
-            meta["douban"] = douban_data
+            meta["douban"] = dict(douban_data)
             if douban_data.get("synopsis") and tmdb_data:
-                tmdb_data["overview"] = douban_data["synopsis"]
-                # Persist the synopsis override to DB so it survives page reload
-                save_tmdb_meta(media_id, {**tmdb_data, "_season_data": tmdb_data.get("_season_data")})
+                overview_override = dict(tmdb_data)
+                overview_override["overview"] = douban_data["synopsis"]
+                save_tmdb_meta(media_id, {**overview_override, "_season_data": tmdb_data.get("_season_data")})
 
     item["metadata"] = meta
 
@@ -177,8 +190,13 @@ def _download_season_poster(sdata, season, show_item):
         poster_path.write_bytes(data)
         season["poster"] = str(poster_path.resolve())
         conn = get_conn()
-        conn.execute("UPDATE seasons SET poster=? WHERE id=?", (season["poster"], season["id"]))
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute("UPDATE seasons SET poster=? WHERE id=?", (season["poster"], season["id"]))
+            conn.commit()
+        except:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
     except Exception:
         pass

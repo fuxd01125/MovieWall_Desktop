@@ -4,13 +4,16 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from moviewall.config import load_config, METADATA_CACHE_FILE
+from moviewall.config import load_config
 from moviewall.constants import VIDEO_EXTS, ART_EXTS, TMDB_IMG_BASE
+
+_cache_write_lock = threading.Lock()
 
 
 def stable_id(*parts):
@@ -158,14 +161,16 @@ def tmdb_request(endpoint, params):
     params = dict(params or {})
     params["api_key"] = key
 
-    from moviewall.config import METADATA_CACHE_FILE, read_json, write_json
+    from moviewall.config import read_json, write_json, METADATA_CACHE_FILE as _mcf
     ck = f"tmdb:{endpoint}"
+    global _cache_write_lock
     try:
-        cache = read_json(METADATA_CACHE_FILE, {})
-        cached = cache.get(ck)
-        ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
-        if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < ttl:
-            return cached["data"]
+        with _cache_write_lock:
+            cache = read_json(_mcf, {})
+            cached = cache.get(ck)
+            ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
+            if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < ttl:
+                return cached["data"]
     except Exception:
         cache = {}
 
@@ -175,8 +180,10 @@ def tmdb_request(endpoint, params):
             data = json.loads(resp.read().decode("utf-8")) if resp.status == 200 else None
             if data:
                 try:
-                    cache[ck] = {"_cached_at": time.time(), "data": data}
-                    write_json(METADATA_CACHE_FILE, cache)
+                    with _cache_write_lock:
+                        cache = read_json(_mcf, {})
+                        cache[ck] = {"_cached_at": time.time(), "data": data}
+                        write_json(_mcf, cache)
                 except Exception:
                     pass
             return data

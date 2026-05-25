@@ -1,10 +1,8 @@
 """Flask routes — API endpoints backed by SQLite database."""
-import json
 import os
 import subprocess
 import threading
 import time
-import urllib.parse
 from pathlib import Path
 
 from flask import abort, jsonify, render_template, request, send_file
@@ -13,15 +11,17 @@ from moviewall.config import load_config, write_json, CONFIG_FILE, METADATA_CACH
 from moviewall.database import (
     build_library_dict, load_all_ratings, load_all_history, load_all_favorites,
     save_rating, delete_rating, save_history, toggle_favorite,
-    load_tmdb_meta, load_douban_meta, save_douban_meta,
+    load_tmdb_meta, save_douban_meta, save_tmdb_meta,
+    get_conn,
 )
-from moviewall.douban import fetch_douban_by_id, set_douban_id_override, fetch_douban_meta
+from moviewall.douban import fetch_douban_by_id, set_douban_id_override
 from moviewall.scanner import scan_library
 from moviewall.metadata import attach_all_metadata
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
 _scan_progress = {"progress": 0, "message": "", "done": False, "error": ""}
+_scan_lock = threading.Lock()
 
 
 def _iter_media_items():
@@ -86,19 +86,21 @@ def register_routes(app):
 
     @app.route("/api/scan", methods=["POST"])
     def api_scan():
-        force = request.args.get("force") == "1" or (request.get_json(silent=True) or {}).get("force")
-
         def _run():
-            global _scan_progress
-            _scan_progress = {"progress": 0, "message": "开始扫描...", "done": False, "error": ""}
+            global _scan_progress, _scan_lock
+            with _scan_lock:
+                _scan_progress = {"progress": 0, "message": "开始扫描...", "done": False, "error": ""}
             try:
                 def cb(p, msg):
-                    global _scan_progress
-                    _scan_progress = {"progress": p, "message": msg, "done": False, "error": ""}
+                    global _scan_progress, _scan_lock
+                    with _scan_lock:
+                        _scan_progress = {"progress": p, "message": msg, "done": False, "error": ""}
                 scan_library(progress_callback=cb)
-                _scan_progress["done"] = True
+                with _scan_lock:
+                    _scan_progress["done"] = True
             except Exception as e:
-                _scan_progress = {"progress": 1, "message": str(e), "done": True, "error": str(e)}
+                with _scan_lock:
+                    _scan_progress = {"progress": 1, "message": str(e), "done": True, "error": str(e)}
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
@@ -106,12 +108,12 @@ def register_routes(app):
 
     @app.route("/api/scan/progress")
     def api_scan_progress():
-        return jsonify(_scan_progress)
+        with _scan_lock:
+            return jsonify(dict(_scan_progress))
 
     @app.route("/api/update", methods=["POST"])
     def api_update_metadata():
         """Force re-fetch TMDB + Douban metadata for all items without re-scanning files."""
-        # Clear cache to force re-fetch
         from moviewall.config import METADATA_CACHE_FILE
         try:
             if METADATA_CACHE_FILE.exists():
@@ -120,9 +122,10 @@ def register_routes(app):
             pass
 
         def _run():
-            global _scan_progress
+            global _scan_progress, _scan_lock
             from concurrent.futures import ThreadPoolExecutor, as_completed
-            _scan_progress = {"progress": 0, "message": "开始更新元数据...", "done": False, "error": ""}
+            with _scan_lock:
+                _scan_progress = {"progress": 0, "message": "开始更新元数据...", "done": False, "error": ""}
             lib = build_library_dict()
             items = lib.get("items", [])
             total = len(items)
@@ -135,16 +138,19 @@ def register_routes(app):
                         for future in as_completed(futures):
                             done += 1
                             item = futures[future]
-                            _scan_progress = {"progress": done / total if total else 1,
-                                              "message": f"更新: {item.get('display_title') or item.get('title')}",
-                                              "done": False, "error": ""}
+                            with _scan_lock:
+                                _scan_progress = {"progress": done / total if total else 1,
+                                                  "message": f"更新: {item.get('display_title') or item.get('title')}",
+                                                  "done": False, "error": ""}
                             try:
                                 future.result()
                             except Exception:
                                 pass
-                _scan_progress["done"] = True
+                with _scan_lock:
+                    _scan_progress["done"] = True
             except Exception as e:
-                _scan_progress = {"progress": 1, "message": str(e), "done": True, "error": str(e)}
+                with _scan_lock:
+                    _scan_progress = {"progress": 1, "message": str(e), "done": True, "error": str(e)}
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
@@ -256,11 +262,15 @@ def register_routes(app):
 
     @app.route("/api/history/<media_id>", methods=["DELETE"])
     def api_clear_history(media_id):
-        from moviewall.database import get_conn
         conn = get_conn()
-        conn.execute("DELETE FROM history WHERE media_id=?", (media_id,))
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute("DELETE FROM history WHERE media_id=?", (media_id,))
+            conn.commit()
+        except:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
         return jsonify({"ok": True})
 
     @app.route("/api/favorites", methods=["GET"])
@@ -292,7 +302,6 @@ def register_routes(app):
             if douban_data and item:
                 save_douban_meta(media_id, douban_data)
                 if douban_data.get("synopsis"):
-                    from moviewall.database import load_tmdb_meta, save_tmdb_meta
                     tm = load_tmdb_meta(media_id)
                     if tm:
                         tm["overview"] = douban_data["synopsis"]
@@ -300,23 +309,26 @@ def register_routes(app):
 
         # If auto-fetch failed or user provided manual data, save manually
         if manual_rating is not None or manual_synopsis:
-            from moviewall.database import get_conn
             conn = get_conn()
-            existing = conn.execute("SELECT * FROM metadata_douban WHERE media_id=?", (media_id,)).fetchone()
-            if existing:
-                rating = manual_rating if manual_rating is not None else existing["rating"]
-                synopsis = manual_synopsis if manual_synopsis else existing["synopsis"]
-                new_id = douban_id or existing["douban_id"]
-                conn.execute("""UPDATE metadata_douban SET rating=?, synopsis=?, douban_id=? WHERE media_id=?""",
-                             (rating, synopsis, new_id, media_id))
-            else:
-                conn.execute("""INSERT INTO metadata_douban (media_id,douban_id,rating,synopsis,fetched_at)
-                                VALUES (?,?,?,?,?)""",
-                             (media_id, douban_id or None, manual_rating, manual_synopsis, time.time()))
-            conn.commit()
-            conn.close()
+            try:
+                existing = conn.execute("SELECT * FROM metadata_douban WHERE media_id=?", (media_id,)).fetchone()
+                if existing:
+                    rating = manual_rating if manual_rating is not None else existing["rating"]
+                    synopsis = manual_synopsis if manual_synopsis else existing["synopsis"]
+                    new_id = douban_id or existing["douban_id"]
+                    conn.execute("""UPDATE metadata_douban SET rating=?, synopsis=?, douban_id=? WHERE media_id=?""",
+                                 (rating, synopsis, new_id, media_id))
+                else:
+                    conn.execute("""INSERT INTO metadata_douban (media_id,douban_id,rating,synopsis,fetched_at)
+                                    VALUES (?,?,?,?,?)""",
+                                 (media_id, douban_id or None, manual_rating, manual_synopsis, time.time()))
+                conn.commit()
+            except:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
             if manual_synopsis and item:
-                from moviewall.database import load_tmdb_meta, save_tmdb_meta
                 tm = load_tmdb_meta(media_id)
                 if tm:
                     tm["overview"] = manual_synopsis
@@ -327,12 +339,16 @@ def register_routes(app):
     @app.route("/api/metadata/douban/<media_id>", methods=["DELETE"])
     def api_clear_douban_id(media_id):
         set_douban_id_override(media_id, "")
-        from moviewall.database import get_conn
         conn = get_conn()
-        conn.execute("DELETE FROM metadata_douban WHERE media_id=?", (media_id,))
-        conn.execute("DELETE FROM metadata_douban_seasons WHERE show_id=?", (media_id,))
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute("DELETE FROM metadata_douban WHERE media_id=?", (media_id,))
+            conn.execute("DELETE FROM metadata_douban_seasons WHERE show_id=?", (media_id,))
+            conn.commit()
+        except:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
         return jsonify({"ok": True})
 
     @app.route("/api/update_single", methods=["POST"])

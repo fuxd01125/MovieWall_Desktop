@@ -73,9 +73,12 @@ def main():
 
         icon_path = str(Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent / "MovieWall.ico")
         kwargs = dict(title=APP_TITLE, url=url, width=1280, height=820, min_size=(960, 640), confirm_close=False, text_select=True)
-        try:
-            webview.create_window(icon=icon_path, **kwargs)
-        except TypeError:
+        if Path(icon_path).exists():
+            try:
+                webview.create_window(icon=icon_path, **kwargs)
+            except TypeError:
+                webview.create_window(**kwargs)
+        else:
             webview.create_window(**kwargs)
         webview.start(debug=False)
 

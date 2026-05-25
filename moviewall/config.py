@@ -14,7 +14,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 METADATA_CACHE_FILE = APP_DIR / "metadata_cache.json"
 
 # Auto-init DB on import
-from moviewall.database import init_db
+from moviewall.database import init_db  # noqa: E402
 init_db()
 
 
@@ -22,13 +22,15 @@ def read_json(path: Path, default):
     try:
         if path.exists():
             return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (json.JSONDecodeError, OSError, ValueError):
         pass
     return default
 
 
 def write_json(path: Path, data):
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
 
 
 def load_config():

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from flask import Flask
 
 from moviewall.config import APP_DIR

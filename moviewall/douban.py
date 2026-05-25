@@ -9,10 +9,6 @@ import urllib.parse
 import urllib.request
 
 from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE
-from moviewall.database import (
-    save_douban_meta, save_douban_season_meta,
-    load_douban_meta, load_douban_season_meta,
-)
 
 DOUBAN_SEARCH = "https://movie.douban.com/subject_search"
 DOUBAN_HOME = "https://movie.douban.com/"
