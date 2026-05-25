@@ -12,7 +12,7 @@ from moviewall.utils import (
 from moviewall.artwork import find_movie_poster, find_show_poster, find_season_poster, find_episode_thumb
 from moviewall.metadata import attach_all_metadata
 from moviewall.database import (
-    upsert_media, upsert_season, upsert_episode, delete_all_media,
+    upsert_media_batch, upsert_season_batch, upsert_episode_batch, delete_all_media,
 )
 
 
@@ -52,7 +52,6 @@ def _scan_movies(folder, cat_key, cat_name):
             "folder": str(movie_folder.resolve()), "path": str(main.resolve()),
             "filename": main.name, "poster": poster, "thumb": thumb,
         }
-        upsert_media(item)
         items.append(item)
 
     for video in loose:
@@ -70,9 +69,11 @@ def _scan_movies(folder, cat_key, cat_name):
             "folder": str(video.parent.resolve()), "path": str(video.resolve()),
             "filename": video.name, "poster": poster, "thumb": thumb,
         }
-        upsert_media(item)
         items.append(item)
 
+    # Batch write all movies at once
+    if items:
+        upsert_media_batch(items)
     return items
 
 
@@ -140,12 +141,23 @@ def _scan_shows(folder, cat_key, cat_name):
             "folder": str(show_folder.resolve()), "poster": show_poster,
             "season_count": len(seasons), "episode_count": total_eps, "seasons": seasons,
         }
-        # Persist core data to DB
-        upsert_media(show_item)
+        # Prepare batch data
+        all_seasons = []
+        all_episodes = []
         for s in seasons:
-            upsert_season(show_id, s)
+            s["show_id"] = show_id
+            all_seasons.append(s)
             for ep in s["episodes"]:
-                upsert_episode(show_id, s["id"], ep)
+                ep["show_id"] = show_id
+                ep["season_id"] = s["id"]
+                all_episodes.append(ep)
+
+        # Batch write all show data at once
+        upsert_media_batch([show_item])
+        if all_seasons:
+            upsert_season_batch(all_seasons)
+        if all_episodes:
+            upsert_episode_batch(all_episodes)
 
         shows.append(show_item)
 

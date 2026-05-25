@@ -11,7 +11,7 @@ from moviewall.config import load_config, write_json, CONFIG_FILE, load_players,
 from moviewall.database import (
     build_library_dict, load_all_ratings, load_all_history, load_all_favorites,
     save_rating, delete_rating, save_history, toggle_favorite,
-    load_tmdb_meta, save_douban_meta, save_tmdb_meta,
+    load_tmdb_meta, load_douban_meta, save_douban_meta, save_tmdb_meta,
     get_conn,
 )
 from moviewall.douban import fetch_douban_by_id, set_douban_id_override
@@ -24,22 +24,43 @@ _scan_progress = {"progress": 0, "message": "", "done": False, "error": ""}
 _scan_lock = threading.Lock()
 
 
-def _iter_media_items():
-    lib = build_library_dict()
-    for item in lib.get("items", []):
-        yield item
-        if item.get("type") == "show":
-            for season in item.get("seasons", []):
-                yield season
-                for ep in season.get("episodes", []):
-                    yield ep
-
-
 def find_media_by_id(media_id):
-    for item in _iter_media_items():
-        if item.get("id") == media_id:
-            return item
-    return None
+    from moviewall.database import scrub_rows
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM media WHERE id=?", (media_id,)).fetchone()
+    except Exception:
+        raise
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    item = dict(row)
+    item["type"] = item.pop("media_type")
+    meta = {}
+    tmdb = load_tmdb_meta(media_id)
+    douban = load_douban_meta(media_id)
+    if tmdb:
+        meta["tmdb"] = tmdb
+    if douban:
+        meta["douban"] = douban
+    item["metadata"] = meta
+    if item["type"] == "show":
+        conn2 = get_conn()
+        try:
+            seasons = scrub_rows(conn2.execute(
+                "SELECT * FROM seasons WHERE show_id=? ORDER BY season_number", (media_id,)
+            ).fetchall())
+            for s in seasons:
+                s["episodes"] = scrub_rows(conn2.execute(
+                    "SELECT * FROM episodes WHERE season_id=? ORDER BY episode_number", (s["id"],)
+                ).fetchall())
+        except Exception:
+            raise
+        finally:
+            conn2.close()
+        item["seasons"] = seasons
+    return item
 
 
 def is_allowed_media_path(path):
@@ -47,13 +68,19 @@ def is_allowed_media_path(path):
         target = str(Path(path).resolve())
     except Exception:
         return False
-    for item in _iter_media_items():
-        if item.get("path"):
-            try:
-                if str(Path(item["path"]).resolve()) == target:
-                    return True
-            except Exception:
-                pass
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT path FROM media WHERE path IS NOT NULL").fetchall()
+    except Exception:
+        raise
+    finally:
+        conn.close()
+    for r in rows:
+        try:
+            if str(Path(r["path"]).resolve()) == target:
+                return True
+        except Exception:
+            pass
     return False
 
 
@@ -62,13 +89,19 @@ def is_allowed_folder(folder):
         target = str(Path(folder).resolve())
     except Exception:
         return False
-    for item in _iter_media_items():
-        if item.get("folder"):
-            try:
-                if str(Path(item["folder"]).resolve()) == target:
-                    return True
-            except Exception:
-                pass
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT folder FROM media WHERE folder IS NOT NULL").fetchall()
+    except Exception:
+        raise
+    finally:
+        conn.close()
+    for r in rows:
+        try:
+            if str(Path(r["folder"]).resolve()) == target:
+                return True
+        except Exception:
+            pass
     return False
 
 

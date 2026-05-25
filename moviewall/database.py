@@ -139,6 +139,8 @@ def get_conn():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA cache_size=-8000")
     return conn
 
 
@@ -275,6 +277,95 @@ def delete_all_media():
     try:
         for t in _DELETE_TABLES:
             conn.execute(f"DELETE FROM {t}")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# ── Batch operations (for scanner performance) ────────────────────
+
+def upsert_media_batch(items):
+    """Insert/update multiple media items in a single connection."""
+    if not items:
+        return
+    conn = get_conn()
+    try:
+        now = time.time()
+        for item in items:
+            conn.execute("""
+                INSERT INTO media (id,media_type,title,display_title,year,category_key,category_name,
+                                   folder,path,filename,poster,thumb,season_count,episode_count,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title=excluded.title, display_title=excluded.display_title, year=excluded.year,
+                    category_key=excluded.category_key, category_name=excluded.category_name,
+                    folder=excluded.folder, path=excluded.path, filename=excluded.filename,
+                    poster=excluded.poster, thumb=excluded.thumb,
+                    season_count=excluded.season_count, episode_count=excluded.episode_count,
+                    updated_at=excluded.updated_at
+            """, (
+                item["id"], item.get("type"), item.get("title"), item.get("display_title"),
+                item.get("year"), item.get("category_key"), item.get("category_name"),
+                item.get("folder"), item.get("path"), item.get("filename"),
+                item.get("poster"), item.get("thumb"),
+                item.get("season_count", 0), item.get("episode_count", 0),
+                now, now,
+            ))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def upsert_season_batch(season_list):
+    """Insert/update multiple seasons in a single connection."""
+    if not season_list:
+        return
+    conn = get_conn()
+    try:
+        for s in season_list:
+            conn.execute("""
+                INSERT INTO seasons (id,show_id,season_number,title,folder,poster,episode_count)
+                VALUES (?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title=excluded.title, folder=excluded.folder, poster=excluded.poster,
+                    episode_count=excluded.episode_count
+            """, (
+                s["id"], s.get("show_id"), s.get("season_number"), s.get("title"),
+                s.get("folder"), s.get("poster"), s.get("episode_count", 0)
+            ))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def upsert_episode_batch(episode_list):
+    """Insert/update multiple episodes in a single connection."""
+    if not episode_list:
+        return
+    conn = get_conn()
+    try:
+        for ep in episode_list:
+            conn.execute("""
+                INSERT INTO episodes (id,show_id,season_id,season_number,episode_number,title,filename,path,folder,thumb)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title=excluded.title, filename=excluded.filename, path=excluded.path,
+                    folder=excluded.folder, thumb=excluded.thumb
+            """, (
+                ep["id"], ep.get("show_id"), ep.get("season_id"),
+                ep.get("season_number"), ep.get("episode_number"),
+                ep.get("title"), ep.get("filename"), ep.get("path"),
+                ep.get("folder"), ep.get("thumb")
+            ))
         conn.commit()
     except Exception:
         conn.rollback()
@@ -557,6 +648,110 @@ def toggle_favorite(media_id):
         conn.close()
 
 
+# ── Batch metadata loaders ─────────────────────────────────────────
+
+def _load_all_tmdb_meta():
+    """Load ALL TMDB metadata in one query. Returns dict[media_id → data]."""
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT * FROM metadata_tmdb").fetchall()
+    except Exception:
+        raise
+    finally:
+        conn.close()
+    result = {}
+    for r in rows:
+        mid = r["media_id"]
+        d = {}
+        if r["genres"]:
+            try:
+                d["genres"] = json.loads(r["genres"])
+            except (json.JSONDecodeError, TypeError):
+                d["genres"] = []
+        if r["season_data"]:
+            try:
+                d["_season_data"] = json.loads(r["season_data"])
+            except (json.JSONDecodeError, TypeError):
+                d["_season_data"] = {}
+        for k in ("tmdb_id","title","original_title","overview","rating","date","poster_url","backdrop_url","fetched_at"):
+            if r[k] is not None:
+                d[k] = r[k]
+        result[mid] = d
+    return result
+
+
+def _load_all_douban_meta():
+    """Load ALL Douban metadata in one query. Returns dict[media_id → data]."""
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT * FROM metadata_douban").fetchall()
+    except Exception:
+        raise
+    finally:
+        conn.close()
+    result = {}
+    for r in rows:
+        mid = r["media_id"]
+        d = {}
+        for k in ("douban_id","rating","star_count","rating_count","abstract","abstract_2","synopsis","fetched_at"):
+            if r[k] is not None:
+                d[k] = r[k]
+        result[mid] = d
+    return result
+
+
+def _load_all_shows():
+    """Load ALL seasons + episodes in 2 queries. Returns dict[show_id → seasons]."""
+    conn = get_conn()
+    try:
+        season_rows = conn.execute(
+            "SELECT * FROM seasons ORDER BY season_number"
+        ).fetchall()
+        episode_rows = conn.execute(
+            "SELECT * FROM episodes ORDER BY season_number, episode_number"
+        ).fetchall()
+    except Exception:
+        raise
+    finally:
+        conn.close()
+
+    eps_by_season = {}
+    for ep in episode_rows:
+        eps_by_season.setdefault(ep["season_id"], []).append(dict(ep))
+
+    shows = {}
+    for s in season_rows:
+        sd = dict(s)
+        sd["episodes"] = eps_by_season.get(s["id"], [])
+        shows.setdefault(s["show_id"], []).append(sd)
+    return shows
+
+
+def _load_all_douban_season_meta():
+    """Load ALL douban season metadata in one query. Returns dict[show_id → {sn → data}]."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """SELECT show_id,season_number,rating,star_count,rating_count,
+                      douban_id,synopsis,poster_url,cast_info,air_date
+               FROM metadata_douban_seasons"""
+        ).fetchall()
+    except Exception:
+        raise
+    finally:
+        conn.close()
+    result = {}
+    for r in rows:
+        sid = r["show_id"]
+        result.setdefault(sid, {})[str(r["season_number"])] = {
+            "rating": r["rating"], "star_count": r["star_count"],
+            "rating_count": r["rating_count"], "douban_id": r["douban_id"],
+            "synopsis": r["synopsis"], "poster_url": r["poster_url"],
+            "cast_info": r["cast_info"], "air_date": r["air_date"],
+        }
+    return result
+
+
 # ── Library query (for API) ─────────────────────────────────────────
 
 def build_library_dict():
@@ -569,40 +764,30 @@ def build_library_dict():
     finally:
         conn.close()
 
+    # Batch-load all metadata in a few queries
+    all_tmdb = _load_all_tmdb_meta()
+    all_douban = _load_all_douban_meta()
+    all_shows = _load_all_shows()
+    all_ds = _load_all_douban_season_meta()
+
     items = []
     for m in media_rows:
         item = dict(m)
         item["type"] = item.pop("media_type")
-        # FIXME: load_tmdb_meta + load_douban_meta each open a new connection.
-        # For 10K items this creates 20K+ connections per API call.
-        # Optimize: batch-load all metadata in a single query with JOIN.
-        tmdb = load_tmdb_meta(item["id"])
-        douban = load_douban_meta(item["id"])
+        mid = item["id"]
+
         meta = {}
+        tmdb = all_tmdb.get(mid)
+        douban = all_douban.get(mid)
         if tmdb:
             meta["tmdb"] = tmdb
         if douban:
             meta["douban"] = douban
         item["metadata"] = meta
 
-        # Attach seasons + episodes for shows
         if item["type"] == "show":
-            conn2 = get_conn()
-            try:
-                seasons = scrub_rows(conn2.execute(
-                    "SELECT * FROM seasons WHERE show_id=? ORDER BY season_number", (item["id"],)
-                ).fetchall())
-                for s in seasons:
-                    s["episodes"] = scrub_rows(conn2.execute(
-                        "SELECT * FROM episodes WHERE season_id=? ORDER BY episode_number", (s["id"],)
-                    ).fetchall())
-            except Exception:
-                raise
-            finally:
-                conn2.close()
-            item["seasons"] = seasons
-            # Attach per-season douban ratings
-            ds = load_douban_season_meta(item["id"])
+            item["seasons"] = all_shows.get(mid, [])
+            ds = all_ds.get(mid)
             if ds:
                 item["_season_meta"] = ds
 
