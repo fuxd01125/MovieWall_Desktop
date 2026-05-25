@@ -3,6 +3,7 @@ import http.cookiejar
 import json
 import random
 import re
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -152,23 +153,20 @@ def _parse_rating(item):
     }
 
 
-# ── Deferred cache write ─────────────────────────────────────────
+# ── Thread-safe cache operations ─────────────────────────────────
 
-_cache_dirty = False
+_cache_lock = threading.Lock()
 
 def _cache_get(key):
-    global _cache_dirty
-    cache = read_json(METADATA_CACHE_FILE, {})
-    return cache.get(key)
+    with _cache_lock:
+        cache = read_json(METADATA_CACHE_FILE, {})
+        return cache.get(key)
 
 def _cache_set(key, value):
-    global _cache_dirty
-    cache = read_json(METADATA_CACHE_FILE, {})
-    cache[key] = value
-    write_json(METADATA_CACHE_FILE, cache)
-
-def _cache_flush():
-    pass  # writes are immediate for safety
+    with _cache_lock:
+        cache = read_json(METADATA_CACHE_FILE, {})
+        cache[key] = value
+        write_json(METADATA_CACHE_FILE, cache)
 
 
 # ── Public API ──────────────────────────────────────────────────────

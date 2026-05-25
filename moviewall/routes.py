@@ -318,22 +318,15 @@ def register_routes(app):
         if douban_id:
             set_douban_id_override(media_id, douban_id)
 
-        # Clear entire cache to force re-fetch
+        # Clear cache to force re-fetch
         try:
             if METADATA_CACHE_FILE.exists():
                 METADATA_CACHE_FILE.unlink()
         except Exception:
             pass
 
-        # Also delete existing DB metadata so attach_all_metadata re-fetches
-        from moviewall.database import get_conn
-        conn = get_conn()
-        conn.execute("DELETE FROM metadata_douban WHERE media_id=?", (media_id,))
-        conn.execute("DELETE FROM metadata_douban_seasons WHERE show_id=?", (media_id,))
-        conn.execute("DELETE FROM metadata_tmdb WHERE media_id=?", (media_id,))
-        conn.commit()
-        conn.close()
-
+        # Don't delete DB metadata here — attach_all_metadata uses UPSERT
+        # (INSERT ON CONFLICT DO UPDATE), so old data survives if re-fetch fails.
         item = find_media_by_id(media_id)
         if item:
             attach_all_metadata(item)
