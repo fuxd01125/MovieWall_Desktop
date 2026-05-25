@@ -921,10 +921,13 @@ function renderSettings() {
     const itemD = item ? douban(item) : {};
     const curRating = itemD.rating || "";
     const curSynopsis = itemD.synopsis || "";
+    const doubanUrl = settingDoubanId ? ('https://movie.douban.com/subject/' + settingDoubanId + '/') : '';
     doubanSection = '<div class="settings-section"><div class="section-header"><h2>豆瓣关联</h2></div>'
-      + '<p class="settings-hint">豆瓣目前无法自动爬取数据，请输入豆瓣 ID 后手动填写评分和剧情简介。</p>'
+      + '<p class="settings-hint">豆瓣目前无法自动爬取数据（WAF 屏蔽），请输入豆瓣 ID 后手动填写评分和剧情简介。</p>'
       + '<p class="settings-hint">豆瓣 ID 可在豆瓣网页 URL 中找到，如 <code>https://movie.douban.com/subject/<strong>10440076</strong>/</code></p>'
-      + '<div class="settings-cat-row"><input id="doubanIdInput" style="flex:0.5" value="' + escapeHtml(settingDoubanId) + '" placeholder="豆瓣 ID"><input id="doubanRating" style="flex:0.2" value="' + escapeHtml(String(curRating)) + '" placeholder="评分 0-10"><button onclick="saveDoubanId()">保存</button><button class="ghost" onclick="saveDoubanIdAndUpdate()">保存并爬取</button><button class="ghost" onclick="settingDoubanItemId=\'\';renderSettings()">取消</button></div>'
+      + '<div class="settings-cat-row"><input id="doubanIdInput" style="flex:0.4" value="' + escapeHtml(settingDoubanId) + '" placeholder="豆瓣 ID"><input id="doubanRating" style="flex:0.15" value="' + escapeHtml(String(curRating)) + '" placeholder="评分"><button onclick="saveDoubanId()">保存</button>'
+      + (doubanUrl ? '<button class="ghost" onclick="window.open(\'' + doubanUrl + '\')">打开豆瓣页</button>' : '')
+      + '<button class="ghost" onclick="settingDoubanItemId=\'\';renderSettings()">取消</button></div>'
       + '<div class="settings-cat-row" style="margin-top:6px"><textarea id="doubanSynopsis" style="flex:1;min-height:60px;padding:8px;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--text);font-family:var(--font);font-size:13px;resize:vertical" placeholder="剧情简介（可选）">' + escapeHtml(curSynopsis) + '</textarea></div>'
       + '</div>';
   }
