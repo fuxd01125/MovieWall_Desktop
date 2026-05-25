@@ -667,7 +667,20 @@ function renderSeasonCard(show, season, expanded) {
 }
 
 function renderInlineEpisodes(show, season) {
+  const sm = show._season_meta || {};
+  const sMeta = sm[String(season.season_number)] || {};
+  let detailHtml = '';
+  if (sMeta.synopsis || sMeta.poster_url || sMeta.cast_info || sMeta.air_date) {
+    detailHtml = '<div class="season-detail-card">'
+      + (sMeta.poster_url ? '<img class="season-detail-poster" src="' + sMeta.poster_url + '" loading="lazy">' : '')
+      + '<div class="season-detail-body">'
+      + (sMeta.synopsis ? '<div class="season-detail-synopsis">' + escapeHtml(sMeta.synopsis) + '</div>' : '')
+      + (sMeta.cast_info ? '<div class="season-detail-cast"><span class="cast-label">主演</span> <span>' + escapeHtml(sMeta.cast_info.replace(/\s*\/\s*/g, ' · ')) + '</span></div>' : '')
+      + (sMeta.air_date ? '<div class="season-detail-air"><span class="cast-label">年份</span> <span>' + escapeHtml(sMeta.air_date) + '</span></div>' : '')
+      + '</div></div>';
+  }
   return '<div class="inline-episodes">'
+    + detailHtml
     + '<div class="episode-list">'
     + (season.episodes || []).map(ep => renderEpisodeCard(show, season, ep)).join("")
     + '</div></div>';

@@ -92,6 +92,11 @@ CREATE TABLE IF NOT EXISTS metadata_douban_seasons (
     douban_id     TEXT,
     rating        REAL,
     star_count    REAL,
+    rating_count  INTEGER,
+    synopsis      TEXT,
+    poster_url    TEXT,
+    cast_info     TEXT,
+    air_date      TEXT,
     fetched_at    REAL
 );
 
@@ -125,6 +130,13 @@ CREATE INDEX IF NOT EXISTS idx_seasons_show   ON seasons(show_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_show  ON episodes(show_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_season ON episodes(season_id);
 CREATE INDEX IF NOT EXISTS idx_history_media  ON history(media_id);
+
+-- Migrate existing tables: add columns if missing
+ALTER TABLE metadata_douban_seasons ADD COLUMN rating_count  INTEGER;
+ALTER TABLE metadata_douban_seasons ADD COLUMN synopsis      TEXT;
+ALTER TABLE metadata_douban_seasons ADD COLUMN poster_url    TEXT;
+ALTER TABLE metadata_douban_seasons ADD COLUMN cast_info     TEXT;
+ALTER TABLE metadata_douban_seasons ADD COLUMN air_date      TEXT;
 """
 
 # ── Connection helpers ──────────────────────────────────────────────
@@ -334,14 +346,17 @@ def load_douban_meta(media_id):
 def save_douban_season_meta(season_id, show_id, season_number, data):
     conn = get_conn()
     conn.execute("""
-        INSERT INTO metadata_douban_seasons (season_id,show_id,season_number,douban_id,rating,star_count,fetched_at)
-        VALUES (?,?,?,?,?,?,?)
+        INSERT INTO metadata_douban_seasons (season_id,show_id,season_number,douban_id,rating,star_count,rating_count,synopsis,poster_url,cast_info,air_date,fetched_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(season_id) DO UPDATE SET
             douban_id=excluded.douban_id, rating=excluded.rating, star_count=excluded.star_count,
-            fetched_at=excluded.fetched_at
+            rating_count=excluded.rating_count, synopsis=excluded.synopsis, poster_url=excluded.poster_url,
+            cast_info=excluded.cast_info, air_date=excluded.air_date, fetched_at=excluded.fetched_at
     """, (
         season_id, show_id, season_number,
         data.get("douban_id"), data.get("rating"), data.get("star_count"),
+        data.get("rating_count"), data.get("synopsis"), data.get("poster_url"),
+        data.get("cast_info"), data.get("air_date"),
         time.time(),
     ))
     conn.commit()
@@ -351,12 +366,17 @@ def save_douban_season_meta(season_id, show_id, season_number, data):
 def load_douban_season_meta(show_id):
     conn = get_conn()
     rows = conn.execute(
-        "SELECT season_number,rating,star_count,douban_id FROM metadata_douban_seasons WHERE show_id=?",
+        """SELECT season_number,rating,star_count,rating_count,douban_id,synopsis,poster_url,cast_info,air_date
+           FROM metadata_douban_seasons WHERE show_id=?""",
         (show_id,)
     ).fetchall()
     conn.close()
-    return {str(r["season_number"]): {"rating": r["rating"], "star_count": r["star_count"],
-                                       "douban_id": r["douban_id"]} for r in rows}
+    return {str(r["season_number"]): {
+        "rating": r["rating"], "star_count": r["star_count"],
+        "rating_count": r["rating_count"], "douban_id": r["douban_id"],
+        "synopsis": r["synopsis"], "poster_url": r["poster_url"],
+        "cast_info": r["cast_info"], "air_date": r["air_date"],
+    } for r in rows}
 
 
 # ── User data ───────────────────────────────────────────────────────

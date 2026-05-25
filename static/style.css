@@ -448,6 +448,41 @@ main{
   font-size:13px;font-weight:600;color:var(--text)
 }
 
+/* ===== Season Detail Card (inside expanded) ===== */
+
+.season-detail-card{
+  display:flex;gap:14px;
+  padding:14px 16px;
+  border-bottom:1px solid var(--line);
+  background:rgba(255,255,255,.02)
+}
+.season-detail-poster{
+  width:70px;height:auto;
+  aspect-ratio:2/3;
+  border-radius:4px;
+  object-fit:cover;
+  flex-shrink:0;
+  border:1px solid var(--line)
+}
+.season-detail-body{
+  min-width:0;
+  display:flex;flex-direction:column;gap:6px
+}
+.season-detail-synopsis{
+  font-size:13px;color:var(--muted);
+  line-height:1.6;
+  display:-webkit-box;
+  -webkit-line-clamp:4;
+  -webkit-box-orient:vertical;
+  overflow:hidden
+}
+.season-detail-cast,.season-detail-air{
+  font-size:12px;color:var(--muted)
+}
+.season-detail-cast .cast-label,.season-detail-air .cast-label{
+  color:var(--text);font-weight:600;margin-right:4px
+}
+
 /* ===== Inline Episodes ===== */
 
 .inline-episodes{

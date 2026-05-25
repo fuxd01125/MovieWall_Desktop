@@ -178,15 +178,97 @@ def fetch_douban_by_id(douban_id):
     return result
 
 
+def _fetch_mobile_detail(douban_id):
+    """Fetch synopsis + poster + other details from mobile page."""
+    cache = read_json(METADATA_CACHE_FILE, {})
+    ck = f"mobile:{douban_id}"
+    cached = cache.get(ck)
+    cfg = load_config()
+    ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
+    if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < ttl:
+        return cached["data"]
+
+    time.sleep(float(cfg.get("douban_request_delay", 1.5)) + random.uniform(0, 0.5))
+    url = DOUBAN_MOBILE.format(douban_id)
+    result = {}
+    try:
+        with urllib.request.urlopen(
+            urllib.request.Request(url, headers=dict(MOBILE_HEADERS, Referer="https://m.douban.com/")),
+            timeout=15,
+        ) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+
+            # Poster from og:image
+            m = re.search(r'<meta\s+property="og:image"[^>]*content="([^"]*)"', html)
+            if m:
+                result["poster_url"] = m.group(1)
+
+            # Synopsis
+            m = re.search(r'<section[^>]*class="subject-intro"[^>]*>(.*?)</section>', html, re.DOTALL)
+            if m:
+                m2 = re.search(r'<p[^>]*>(.*?)</p>', m.group(1), re.DOTALL)
+                if m2:
+                    synopsis = re.sub(r'<[^>]+>', '', m2.group(1)).strip()
+                    synopsis = re.sub(r'\s+', ' ', synopsis)
+                    if synopsis:
+                        result["synopsis"] = synopsis
+            if not result.get("synopsis"):
+                m = re.search(r'<meta name="description"[^>]*content="([^"]*)"', html)
+                if m:
+                    desc = m.group(1)
+                    si = desc.find('简介：')
+                    if si >= 0:
+                        result["synopsis"] = desc[si+3:].strip()
+
+            # Air date from meta or title info
+            m = re.search(r'<span[^>]*class="year"[^>]*>\(?(\d{4})\)?</span>', html)
+            if m:
+                result["air_date"] = m.group(1)
+
+            # Cast from meta description or page
+            m = re.search(r'<meta name="description"[^>]*content="([^"]*)"', html)
+            if m:
+                desc = m.group(1)
+                si = desc.find('主演：')
+                ei = desc.find('简介：')
+                if si >= 0:
+                    cast_text = desc[si+3:] if ei < 0 else desc[si+3:ei]
+                    if cast_text.strip():
+                        result["cast_info"] = cast_text.strip()
+
+    except Exception:
+        pass
+
+    cache[ck] = {"_cached_at": time.time(), "data": result}
+    write_json(METADATA_CACHE_FILE, cache)
+    return result
+
+
 def fetch_douban_by_season(show_title, show_year, season_number):
     """Search Douban for a specific season of a show.
        e.g. "葬送的芙莉莲 第二季" or "Hannibal Season 2"
+       Returns rating + synopsis + poster + cast.
     """
     keywords = [f"{show_title} 第{season_number}季", f"{show_title} Season {season_number}"]
     for kw in keywords:
         item = _search(kw, show_year)
         if item:
-            return _parse_rating(item)
+            result = _parse_rating(item)
+            # Enrich with mobile page data
+            if result and result.get("douban_id"):
+                detail = _fetch_mobile_detail(result["douban_id"])
+                if detail:
+                    if detail.get("synopsis"):
+                        result["synopsis"] = detail["synopsis"]
+                    if detail.get("poster_url"):
+                        result["poster_url"] = detail["poster_url"]
+                    if detail.get("air_date"):
+                        result["air_date"] = detail["air_date"]
+                    if detail.get("cast_info"):
+                        result["cast_info"] = detail["cast_info"]
+                    elif result.get("abstract_2"):
+                        result["cast_info"] = result["abstract_2"]
+            return result
     return None
 
 
