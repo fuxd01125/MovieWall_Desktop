@@ -203,9 +203,25 @@ def register_routes(app):
     @app.route("/api/artwork/<media_id>/<kind>")
     def api_artwork(media_id, kind):
         item = find_media_by_id(media_id)
-        if not item:
-            abort(404)
-        art_path = item.get(kind)
+        art_path = None
+        if item:
+            art_path = item.get(kind)
+        if not art_path:
+            # Fallback: query seasons/episodes directly (media_id may be a season or episode ID)
+            conn2 = get_conn()
+            try:
+                if kind == "poster":
+                    row = conn2.execute("SELECT poster FROM seasons WHERE id=?", (media_id,)).fetchone()
+                    if row:
+                        art_path = row["poster"]
+                elif kind == "thumb":
+                    row = conn2.execute("SELECT thumb FROM episodes WHERE id=?", (media_id,)).fetchone()
+                    if row:
+                        art_path = row["thumb"]
+            except Exception:
+                raise
+            finally:
+                conn2.close()
         if not art_path:
             abort(404)
         p = Path(art_path)
