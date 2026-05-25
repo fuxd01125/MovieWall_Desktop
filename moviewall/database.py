@@ -153,7 +153,7 @@ def init_db():
             except sqlite3.OperationalError:
                 pass  # column already exists
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -198,7 +198,7 @@ def upsert_media(item):
             now,  # updated_at
         ))
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -219,7 +219,7 @@ def upsert_season(show_id, season):
             season.get("folder"), season.get("poster"), season.get("episode_count", 0)
         ))
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -240,7 +240,7 @@ def upsert_episode(show_id, season_id, ep):
             ep.get("title"), ep.get("filename"), ep.get("path"), ep.get("folder"), ep.get("thumb")
         ))
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -260,22 +260,23 @@ def delete_media(media_id):
         conn.execute("DELETE FROM ratings WHERE media_id=?", (media_id,))
         conn.execute("DELETE FROM media WHERE id=?", (media_id,))
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
 
 
+_DELETE_TABLES = frozenset({"episodes","seasons","metadata_douban_seasons","metadata_tmdb","metadata_douban","media"})
+
 def delete_all_media():
     """Delete only media and metadata — preserve user data (ratings, favorites, history)."""
     conn = get_conn()
     try:
-        tables = ("episodes","seasons","metadata_douban_seasons","metadata_tmdb","metadata_douban","media")
-        for t in tables:
+        for t in _DELETE_TABLES:
             conn.execute(f"DELETE FROM {t}")
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -314,7 +315,7 @@ def save_tmdb_meta(media_id, data):
             time.time(),
         ))
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -325,7 +326,7 @@ def load_tmdb_meta(media_id):
     conn = get_conn()
     try:
         row = conn.execute("SELECT * FROM metadata_tmdb WHERE media_id=?", (media_id,)).fetchone()
-    except:
+    except Exception:
         raise
     finally:
         conn.close()
@@ -377,7 +378,7 @@ def save_douban_meta(media_id, data):
             time.time(),
         ))
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -388,7 +389,7 @@ def load_douban_meta(media_id):
     conn = get_conn()
     try:
         row = conn.execute("SELECT * FROM metadata_douban WHERE media_id=?", (media_id,)).fetchone()
-    except:
+    except Exception:
         raise
     finally:
         conn.close()
@@ -420,7 +421,7 @@ def save_douban_season_meta(season_id, show_id, season_number, data):
             time.time(),
         ))
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -435,7 +436,7 @@ def load_douban_season_meta(show_id):
                FROM metadata_douban_seasons WHERE show_id=?""",
             (show_id,)
         ).fetchall()
-    except:
+    except Exception:
         raise
     finally:
         conn.close()
@@ -453,7 +454,7 @@ def load_all_ratings():
     conn = get_conn()
     try:
         rows = conn.execute("SELECT media_id,score,rated_at FROM ratings").fetchall()
-    except:
+    except Exception:
         raise
     finally:
         conn.close()
@@ -466,7 +467,7 @@ def save_rating(media_id, score):
         conn.execute("INSERT OR REPLACE INTO ratings (media_id,score,rated_at) VALUES (?,?,?)",
                      (media_id, score, time.time()))
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -478,7 +479,7 @@ def delete_rating(media_id):
     try:
         conn.execute("DELETE FROM ratings WHERE media_id=?", (media_id,))
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -489,7 +490,7 @@ def load_all_history():
     conn = get_conn()
     try:
         rows = conn.execute("SELECT * FROM history ORDER BY played_at DESC").fetchall()
-    except:
+    except Exception:
         raise
     finally:
         conn.close()
@@ -503,6 +504,8 @@ def load_all_history():
 
 
 def save_history(entry):
+    # FIXME: Each play creates a new row (PK is media_id + played_at).
+    # Table grows unboundedly — add a cleanup mechanism or LIMIT.
     conn = get_conn()
     try:
         conn.execute("""
@@ -516,7 +519,7 @@ def save_history(entry):
             entry.get("played_at") or time.time(),
         ))
         conn.commit()
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -527,7 +530,7 @@ def load_all_favorites():
     conn = get_conn()
     try:
         rows = conn.execute("SELECT media_id FROM favorites").fetchall()
-    except:
+    except Exception:
         raise
     finally:
         conn.close()
@@ -547,7 +550,7 @@ def toggle_favorite(media_id):
                          (media_id, time.time()))
             conn.commit()
             return "added"
-    except:
+    except Exception:
         conn.rollback()
         raise
     finally:
@@ -561,7 +564,7 @@ def build_library_dict():
     conn = get_conn()
     try:
         media_rows = conn.execute("SELECT * FROM media ORDER BY title COLLATE NOCASE").fetchall()
-    except:
+    except Exception:
         raise
     finally:
         conn.close()
@@ -570,7 +573,9 @@ def build_library_dict():
     for m in media_rows:
         item = dict(m)
         item["type"] = item.pop("media_type")
-        # Attach metadata
+        # FIXME: load_tmdb_meta + load_douban_meta each open a new connection.
+        # For 10K items this creates 20K+ connections per API call.
+        # Optimize: batch-load all metadata in a single query with JOIN.
         tmdb = load_tmdb_meta(item["id"])
         douban = load_douban_meta(item["id"])
         meta = {}
@@ -591,7 +596,7 @@ def build_library_dict():
                     s["episodes"] = scrub_rows(conn2.execute(
                         "SELECT * FROM episodes WHERE season_id=? ORDER BY episode_number", (s["id"],)
                     ).fetchall())
-            except:
+            except Exception:
                 raise
             finally:
                 conn2.close()

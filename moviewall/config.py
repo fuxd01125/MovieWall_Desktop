@@ -1,5 +1,6 @@
 import json
 import sys
+import threading
 from pathlib import Path
 
 
@@ -12,6 +13,9 @@ def runtime_dir():
 APP_DIR = runtime_dir()
 CONFIG_FILE = APP_DIR / "config.json"
 METADATA_CACHE_FILE = APP_DIR / "metadata_cache.json"
+
+# Global lock for all metadata cache operations (shared across modules)
+cache_lock = threading.Lock()
 
 # Auto-init DB on import
 from moviewall.database import init_db  # noqa: E402

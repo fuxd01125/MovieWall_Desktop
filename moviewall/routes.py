@@ -7,7 +7,7 @@ from pathlib import Path
 
 from flask import abort, jsonify, render_template, request, send_file
 
-from moviewall.config import load_config, write_json, CONFIG_FILE, METADATA_CACHE_FILE, load_players, normalize_categories
+from moviewall.config import load_config, write_json, CONFIG_FILE, load_players, normalize_categories
 from moviewall.database import (
     build_library_dict, load_all_ratings, load_all_history, load_all_favorites,
     save_rating, delete_rating, save_history, toggle_favorite,
@@ -113,14 +113,11 @@ def register_routes(app):
 
     @app.route("/api/update", methods=["POST"])
     def api_update_metadata():
-        """Force re-fetch TMDB + Douban metadata for all items without re-scanning files."""
-        from moviewall.config import METADATA_CACHE_FILE
-        try:
-            if METADATA_CACHE_FILE.exists():
-                METADATA_CACHE_FILE.unlink()
-        except Exception:
-            pass
-
+        """Force re-fetch TMDB + Douban metadata for all items without re-scanning files.
+        Note: This does NOT clear the metadata cache — DB-level UPSERT ensures old data
+        is preserved if TMDB/Douban are unreachable. To force a full cache refresh,
+        delete metadata_cache.json manually before calling this endpoint.
+        """
         def _run():
             global _scan_progress, _scan_lock
             from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -266,7 +263,7 @@ def register_routes(app):
         try:
             conn.execute("DELETE FROM history WHERE media_id=?", (media_id,))
             conn.commit()
-        except:
+        except Exception:
             conn.rollback()
             raise
         finally:
@@ -323,7 +320,7 @@ def register_routes(app):
                                     VALUES (?,?,?,?,?)""",
                                  (media_id, douban_id or None, manual_rating, manual_synopsis, time.time()))
                 conn.commit()
-            except:
+            except Exception:
                 conn.rollback()
                 raise
             finally:
@@ -344,7 +341,7 @@ def register_routes(app):
             conn.execute("DELETE FROM metadata_douban WHERE media_id=?", (media_id,))
             conn.execute("DELETE FROM metadata_douban_seasons WHERE show_id=?", (media_id,))
             conn.commit()
-        except:
+        except Exception:
             conn.rollback()
             raise
         finally:
@@ -363,18 +360,9 @@ def register_routes(app):
         if douban_id:
             set_douban_id_override(media_id, douban_id)
 
-        # Clear only cache entries for this item (not entire cache)
-        try:
-            if METADATA_CACHE_FILE.exists():
-                import json as _json
-                cache = _json.loads(METADATA_CACHE_FILE.read_text("utf-8"))
-                # Find and remove keys containing the media_id or douban_id
-                to_del = [k for k in cache if media_id in k or (douban_id and douban_id in k)]
-                for k in to_del:
-                    cache.pop(k, None)
-                METADATA_CACHE_FILE.write_text(_json.dumps(cache, ensure_ascii=False), "utf-8")
-        except Exception:
-            pass
+        # Note: No cache clearing here. The DB-level UPSERT in attach_all_metadata
+        # ensures old data is preserved if TMDB/Douban are unreachable.
+        # Cache entries naturally expire based on metadata_cache_days TTL.
 
         # Don't delete DB metadata here — attach_all_metadata uses UPSERT
         # (INSERT ON CONFLICT DO UPDATE), so old data survives if re-fetch fails.

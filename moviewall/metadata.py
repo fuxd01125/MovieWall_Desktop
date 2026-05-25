@@ -1,14 +1,11 @@
 """Metadata provider — fetches TMDB + Douban data, stores separately in DB."""
-import threading
 import time
 from pathlib import Path
 from urllib.request import urlopen
 
-from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE
+from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE, cache_lock
 from moviewall.database import save_tmdb_meta, save_douban_meta, save_douban_season_meta, get_conn
 from moviewall.utils import normalize_key, tmdb_request, tmdb_image
-
-_cache_write_lock = threading.Lock()
 
 
 # ── TMDB ────────────────────────────────────────────────────────────
@@ -18,8 +15,7 @@ def get_tmdb_metadata(title, year, media_type):
     if not cfg.get("metadata_enabled", True) or not (cfg.get("tmdb_api_key") or "").strip():
         return {}
     lang = cfg.get("tmdb_language", "zh-CN") or "zh-CN"
-    global _cache_write_lock
-    with _cache_write_lock:
+    with cache_lock:
         cache = read_json(METADATA_CACHE_FILE, {})
     key = f"{media_type}:{normalize_key(title)}:{year}:{lang}"
     cached = cache.get(key)
@@ -32,7 +28,7 @@ def get_tmdb_metadata(title, year, media_type):
         params["year" if media_type == "movie" else "first_air_date_year"] = year
     results = (tmdb_request(endpoint, params) or {}).get("results") or []
     if not results:
-        with _cache_write_lock:
+        with cache_lock:
             cache = read_json(METADATA_CACHE_FILE, {})
             cache[key] = {"_cached_at": time.time(), "data": {}}
             write_json(METADATA_CACHE_FILE, cache)
@@ -54,7 +50,7 @@ def get_tmdb_metadata(title, year, media_type):
         "poster_url": tmdb_image(details.get("poster_path") or best.get("poster_path"), "w500"),
         "backdrop_url": tmdb_image(details.get("backdrop_path") or best.get("backdrop_path"), "w1280"),
     }
-    with _cache_write_lock:
+    with cache_lock:
         cache = read_json(METADATA_CACHE_FILE, {})
         cache[key] = {"_cached_at": time.time(), "data": data}
         write_json(METADATA_CACHE_FILE, cache)
@@ -63,8 +59,7 @@ def get_tmdb_metadata(title, year, media_type):
 
 def fetch_tmdb_seasons(tmdb_id, seasons_list, lang):
     """Fetch per-season TMDB metadata (rating, air_date, overview, poster)."""
-    global _cache_write_lock
-    with _cache_write_lock:
+    with cache_lock:
         cache = read_json(METADATA_CACHE_FILE, {})
     season_map = {}
     for season in seasons_list:
@@ -72,7 +67,7 @@ def fetch_tmdb_seasons(tmdb_id, seasons_list, lang):
         if not sn:
             continue
         ck = f"season:{tmdb_id}:{sn}:{lang}"
-        with _cache_write_lock:
+        with cache_lock:
             cached = cache.get(ck)
             if cached and time.time() - cached.get("_cached_at", 0) < int(load_config().get("metadata_cache_days", 30)) * 86400:
                 sdata = cached.get("data", {})
@@ -81,7 +76,7 @@ def fetch_tmdb_seasons(tmdb_id, seasons_list, lang):
         if sdata is None:
             sdata = tmdb_request(f"tv/{tmdb_id}/season/{sn}", {"language": lang}) or {}
             if sdata:
-                with _cache_write_lock:
+                with cache_lock:
                     cache = read_json(METADATA_CACHE_FILE, {})
                     cache[ck] = {"_cached_at": time.time(), "data": sdata}
         if sdata:
@@ -193,7 +188,7 @@ def _download_season_poster(sdata, season, show_item):
         try:
             conn.execute("UPDATE seasons SET poster=? WHERE id=?", (season["poster"], season["id"]))
             conn.commit()
-        except:
+        except Exception:
             conn.rollback()
             raise
         finally:

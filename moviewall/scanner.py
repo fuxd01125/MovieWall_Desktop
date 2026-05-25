@@ -163,7 +163,9 @@ def scan_library(progress_callback=None):
     categories = normalize_categories()
     stats = {"movies": 0, "shows": 0, "episodes": 0}
 
-    # Wipe DB media — we re-insert everything fresh
+    # FIXME: Full wipe + rebuild — if scan crashes mid-way, DB is left empty.
+    # Risk: during rebuild, API returns empty library for minutes on large media sets.
+    # Mitigation: consider incremental scan with mtime comparison.
     delete_all_media()
 
     existing_cats = [(fn, cat) for fn, cat in categories.items() if (root / fn).exists()]

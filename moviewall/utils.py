@@ -4,16 +4,13 @@ import os
 import re
 import shutil
 import subprocess
-import threading
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from moviewall.config import load_config
+from moviewall.config import load_config, cache_lock
 from moviewall.constants import VIDEO_EXTS, ART_EXTS, TMDB_IMG_BASE
-
-_cache_write_lock = threading.Lock()
 
 
 def stable_id(*parts):
@@ -163,9 +160,8 @@ def tmdb_request(endpoint, params):
 
     from moviewall.config import read_json, write_json, METADATA_CACHE_FILE as _mcf
     ck = f"tmdb:{endpoint}"
-    global _cache_write_lock
     try:
-        with _cache_write_lock:
+        with cache_lock:
             cache = read_json(_mcf, {})
             cached = cache.get(ck)
             ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
@@ -180,7 +176,7 @@ def tmdb_request(endpoint, params):
             data = json.loads(resp.read().decode("utf-8")) if resp.status == 200 else None
             if data:
                 try:
-                    with _cache_write_lock:
+                    with cache_lock:
                         cache = read_json(_mcf, {})
                         cache[ck] = {"_cached_at": time.time(), "data": data}
                         write_json(_mcf, cache)

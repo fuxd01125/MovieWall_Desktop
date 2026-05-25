@@ -3,12 +3,11 @@ import http.cookiejar
 import json
 import random
 import re
-import threading
 import time
 import urllib.parse
 import urllib.request
 
-from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE
+from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE, cache_lock
 
 DOUBAN_SEARCH = "https://movie.douban.com/subject_search"
 DOUBAN_HOME = "https://movie.douban.com/"
@@ -169,15 +168,13 @@ def _parse_rating(item):
 
 # ── Thread-safe cache operations ─────────────────────────────────
 
-_cache_lock = threading.Lock()
-
 def _cache_get(key):
-    with _cache_lock:
+    with cache_lock:
         cache = read_json(METADATA_CACHE_FILE, {})
         return cache.get(key)
 
 def _cache_set(key, value):
-    with _cache_lock:
+    with cache_lock:
         cache = read_json(METADATA_CACHE_FILE, {})
         cache[key] = value
         write_json(METADATA_CACHE_FILE, cache)
