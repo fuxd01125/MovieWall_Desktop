@@ -71,12 +71,14 @@ def is_allowed_media_path(path):
         return False
     conn = get_conn()
     try:
-        rows = conn.execute("SELECT path FROM media WHERE path IS NOT NULL").fetchall()
+        media_rows = conn.execute("SELECT path FROM media WHERE path IS NOT NULL").fetchall()
+        ep_rows = conn.execute("SELECT path FROM episodes WHERE path IS NOT NULL").fetchall()
+        all_rows = list(media_rows) + list(ep_rows)
     except Exception:
         raise
     finally:
         conn.close()
-    for r in rows:
+    for r in all_rows:
         try:
             if str(Path(r["path"]).resolve()) == target:
                 return True
