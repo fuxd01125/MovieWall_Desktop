@@ -1,4 +1,6 @@
-"""Douban scraper — search, rating, synopsis, per-season support."""
+"""Douban scraper — search, rating, synopsis, per-season support.
+Implements circuit breaker: after HTTP 403, disables all Douban requests for 24h.
+"""
 import http.cookiejar
 import json
 import random
@@ -8,10 +10,62 @@ import urllib.parse
 import urllib.request
 
 from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE, cache_lock
+from moviewall.log import log
 
 DOUBAN_SEARCH = "https://movie.douban.com/subject_search"
 DOUBAN_HOME = "https://movie.douban.com/"
 DOUBAN_MOBILE = "https://m.douban.com/movie/subject/{}/"
+
+# ── Circuit breaker ──────────────────────────────────────────────────
+
+_DOUBAN_BLOCKED_KEY = "douban_health"
+_BLOCK_COOLDOWN_403 = 86400       # 24h after HTTP 403
+_BLOCK_COOLDOWN_TIMEOUT = 3600    # 1h after timeout
+_BLOCK_COOLDOWN_NETWORK = 1800    # 30min after network failure
+
+def _douban_health():
+    """Return (blocked, reason, blocked_until) for current Douban provider state."""
+    with cache_lock:
+        cache = read_json(METADATA_CACHE_FILE, {})
+        h = cache.get(_DOUBAN_BLOCKED_KEY)
+    if not h:
+        return False, "", 0
+    now = time.time()
+    blocked_until = h.get("blocked_until", 0)
+    if now < blocked_until:
+        return True, h.get("reason", "unknown"), blocked_until
+    return False, "", 0
+
+def _set_douban_blocked(reason="blocked"):
+    """Mark Douban provider as blocked with cooldown."""
+    now = time.time()
+    reason_lower = reason.lower()
+    if "403" in reason_lower or "blocked" in reason_lower:
+        cooldown = _BLOCK_COOLDOWN_403
+    elif "timeout" in reason_lower:
+        cooldown = _BLOCK_COOLDOWN_TIMEOUT
+    else:
+        cooldown = _BLOCK_COOLDOWN_NETWORK
+    blocked_until = now + cooldown
+    with cache_lock:
+        cache = read_json(METADATA_CACHE_FILE, {})
+        cache[_DOUBAN_BLOCKED_KEY] = {
+            "blocked_at": now,
+            "blocked_until": blocked_until,
+            "reason": reason,
+            "failure_count": cache.get(_DOUBAN_BLOCKED_KEY, {}).get("failure_count", 0) + 1,
+        }
+        write_json(METADATA_CACHE_FILE, cache)
+    log.warning("Douban provider blocked (cooldown=%.1fh, reason=%s)", cooldown / 3600, reason)
+
+def _douban_available():
+    """Early-exit check: returns False if Douban provider is in cooldown."""
+    blocked, reason, until = _douban_health()
+    if blocked:
+        return False
+    if not load_config().get("douban_enabled", True):
+        return False
+    return True
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
@@ -34,6 +88,8 @@ def _get_opener():
 
 
 def _request(url, opener=None):
+    if not _douban_available():
+        return None
     cfg = load_config()
     delay = float(cfg.get("douban_request_delay", 0.5)) + random.uniform(0, 0.3)
     time.sleep(delay)
@@ -44,24 +100,17 @@ def _request(url, opener=None):
         with opener.open(urllib.request.Request(url, headers=h), timeout=15) as r:
             html = r.read().decode("utf-8", errors="replace")
             if "登录重定向" in html or "检测到异常" in html:
-                _douban_blocked_log()
+                _set_douban_blocked("blocked: captcha detection")
                 return None
             return html
     except urllib.error.HTTPError as e:
         if e.code == 403:
-            _douban_blocked_log()
+            _set_douban_blocked("HTTP 403")
         return None
     except Exception:
+        # Network/timeout error — softer cooldown
+        _set_douban_blocked("network/timeout")
         return None
-
-
-_blocked_logged = False
-
-def _douban_blocked_log():
-    global _blocked_logged
-    if not _blocked_logged:
-        _blocked_logged = True
-        print("[豆瓣] 请求被屏蔽（HTTP 403），豆瓣数据不可用。TMDB 数据不受影响。")
 
 
 def _clean(s):
@@ -183,6 +232,8 @@ def _cache_set(key, value):
 # ── Public API ──────────────────────────────────────────────────────
 
 def fetch_douban_meta(title, year):
+    if not _douban_available():
+        return None
     """Fetch Douban rating + abstract for a movie/show. Returns dict or None."""
     cfg = load_config()
     ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
@@ -204,6 +255,8 @@ def fetch_douban_meta(title, year):
 
 def fetch_douban_by_id(douban_id):
     """Fetch Douban data for a known ID."""
+    if not _douban_available():
+        return None
     cfg = load_config()
     ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
     ck = f"douban_id:{douban_id}"
@@ -224,6 +277,8 @@ def fetch_douban_by_id(douban_id):
 
 def _fetch_mobile_detail(douban_id):
     """Fetch synopsis + poster + other details from mobile page."""
+    if not _douban_available():
+        return {}
     cfg = load_config()
     ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
     ck = f"mobile:{douban_id}"
@@ -311,6 +366,8 @@ def fetch_douban_by_season(show_title, show_year, season_number, original_title=
        2. Show title broad search — find season in ALL results
        3. If no season-specific page found, use show-level douban_id as fallback
     """
+    if not _douban_available():
+        return None
     cn = _cn_digits(season_number)
     best_item = None
     best_score = -1
@@ -373,6 +430,8 @@ def fetch_douban_by_season(show_title, show_year, season_number, original_title=
 
 def _fetch_synopsis(douban_id):
     """Fetch plot synopsis from mobile Douban page."""
+    if not _douban_available():
+        return None
     cfg = load_config()
     ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
     ck = f"synopsis:{douban_id}"
