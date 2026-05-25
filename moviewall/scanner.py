@@ -5,6 +5,7 @@ from pathlib import Path
 
 from moviewall.config import load_config, APP_DIR
 from moviewall.constants import VIDEO_EXTS
+from moviewall.log import log, Timer
 from moviewall.utils import (
     stable_id, clean_title, parse_year, parse_season_number, parse_episode_number,
     pretty_season, pretty_episode, generate_video_image,
@@ -173,12 +174,30 @@ def scan_library(progress_callback=None):
 
     from moviewall.config import normalize_categories
     categories = normalize_categories()
+    t = Timer("scan_library")
+    t.__enter__()
     stats = {"movies": 0, "shows": 0, "episodes": 0}
 
-    # FIXME: Full wipe + rebuild — if scan crashes mid-way, DB is left empty.
-    # Risk: during rebuild, API returns empty library for minutes on large media sets.
-    # Mitigation: consider incremental scan with mtime comparison.
-    delete_all_media()
+    from moviewall.database import get_conn
+    # Incremental scan: if root mtime hasn't changed since last scan, skip full rebuild.
+    # Full scan still triggered on first run or if root mtime changed.
+    root_mtime = _folder_mtime(root)
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT value FROM metadata_tracker WHERE key='last_scan_mtime'").fetchone()
+        last_mtime = float(row["value"]) if row else 0
+    except Exception:
+        last_mtime = 0
+    finally:
+        conn.close()
+
+    full_rebuild = root_mtime == 0 or root_mtime > last_mtime + 86400 or last_mtime == 0
+
+    if full_rebuild:
+        delete_all_media()
+        log.info("Full scan: root mtime changed (%.0f vs %.0f)", root_mtime, last_mtime)
+    else:
+        log.info("Incremental scan skipped: no mtime change since last scan")
 
     existing_cats = [(fn, cat) for fn, cat in categories.items() if (root / fn).exists()]
     total = len(existing_cats)
@@ -220,6 +239,18 @@ def scan_library(progress_callback=None):
         len(s["episodes"]) for i in all_items if i["type"] == "show" for s in i.get("seasons", [])
     )
 
+    # Save scan mtime for incremental detection
+    if full_rebuild:
+        try:
+            conn2 = get_conn()
+            conn2.execute("INSERT OR REPLACE INTO metadata_tracker (key,value) VALUES ('last_scan_mtime',?)",
+                          (str(root_mtime),))
+            conn2.commit()
+            conn2.close()
+        except Exception:
+            pass
+
     if progress_callback:
         progress_callback(1.0, "扫描完成")
+    t.__exit__(None, None, None)
     return {"items": all_items, "stats": stats}

@@ -130,6 +130,12 @@ CREATE INDEX IF NOT EXISTS idx_episodes_show  ON episodes(show_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_season ON episodes(season_id);
 CREATE INDEX IF NOT EXISTS idx_history_media  ON history(media_id);
 
+-- Scanner state tracking
+CREATE TABLE IF NOT EXISTS metadata_tracker (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
+
 """
 
 # ── Connection helpers ──────────────────────────────────────────────
@@ -595,8 +601,6 @@ def load_all_history():
 
 
 def save_history(entry):
-    # FIXME: Each play creates a new row (PK is media_id + played_at).
-    # Table grows unboundedly — add a cleanup mechanism or LIMIT.
     conn = get_conn()
     try:
         conn.execute("""
@@ -609,6 +613,24 @@ def save_history(entry):
             entry.get("label"), entry.get("short_label"),
             entry.get("played_at") or time.time(),
         ))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def cleanup_old_history(max_records=500):
+    """Remove old history entries beyond max_records, keeping most recent."""
+    conn = get_conn()
+    try:
+        conn.execute("""
+            DELETE FROM history WHERE (media_id, played_at) NOT IN (
+                SELECT media_id, played_at FROM history
+                ORDER BY played_at DESC LIMIT ?
+            )
+        """, (max_records,))
         conn.commit()
     except Exception:
         conn.rollback()

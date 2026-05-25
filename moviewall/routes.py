@@ -8,6 +8,7 @@ from pathlib import Path
 from flask import abort, jsonify, render_template, request, send_file
 
 from moviewall.config import load_config, write_json, CONFIG_FILE, load_players, normalize_categories
+from moviewall.log import log
 from moviewall.database import (
     build_library_dict, load_all_ratings, load_all_history, load_all_favorites,
     save_rating, delete_rating, save_history, toggle_favorite,
@@ -108,6 +109,19 @@ def is_allowed_folder(folder):
 # ── Route Registration ──────────────────────────────────────────────
 
 def register_routes(app):
+
+    @app.before_request
+    def _request_start():
+        request._start_time = time.time()
+
+    @app.after_request
+    def _request_log(resp):
+        elapsed = time.time() - getattr(request, "_start_time", time.time())
+        if elapsed > 0.5:
+            log.warning("Slow request: %s %s (%.2fs)", request.method, request.path, elapsed)
+        elif elapsed > 0.1:
+            log.info("Request: %s %s (%.2fs)", request.method, request.path, elapsed)
+        return resp
 
     @app.route("/")
     def index():

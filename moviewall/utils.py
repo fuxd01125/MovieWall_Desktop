@@ -150,7 +150,7 @@ def tmdb_image(path, size="w500"):
     return f"{TMDB_IMG_BASE}/{size}{path}" if path else ""
 
 
-def tmdb_request(endpoint, params):
+def tmdb_request(endpoint, params, _retries=2):
     cfg = load_config()
     key = (cfg.get("tmdb_api_key") or "").strip()
     if not key:
@@ -171,17 +171,20 @@ def tmdb_request(endpoint, params):
         cache = {}
 
     url = f"https://api.themoviedb.org/3/{endpoint}?{urllib.parse.urlencode(params)}"
-    try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "MovieWall/12"}), timeout=12) as resp:
-            data = json.loads(resp.read().decode("utf-8")) if resp.status == 200 else None
-            if data:
-                try:
-                    with cache_lock:
-                        cache = read_json(_mcf, {})
-                        cache[ck] = {"_cached_at": time.time(), "data": data}
-                        write_json(_mcf, cache)
-                except Exception:
-                    pass
-            return data
-    except Exception:
-        return None
+    for attempt in range(_retries):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "MovieWall/12"}), timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8")) if resp.status == 200 else None
+                if data:
+                    try:
+                        with cache_lock:
+                            cache = read_json(_mcf, {})
+                            cache[ck] = {"_cached_at": time.time(), "data": data}
+                            write_json(_mcf, cache)
+                    except Exception:
+                        pass
+                return data
+        except Exception:
+            if attempt < _retries - 1:
+                time.sleep((attempt + 1) * 2)
+    return None
