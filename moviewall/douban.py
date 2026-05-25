@@ -40,15 +40,29 @@ def _get_opener():
 
 def _request(url, opener=None):
     cfg = load_config()
-    time.sleep(float(cfg.get("douban_request_delay", 0.5)) + random.uniform(0, 0.3))
+    delay = float(cfg.get("douban_request_delay", 0.5)) + random.uniform(0, 0.3)
+    time.sleep(delay)
     if opener is None:
         opener = _get_opener()
     h = dict(HEADERS, Referer="https://movie.douban.com/")
     try:
         with opener.open(urllib.request.Request(url, headers=h), timeout=15) as r:
-            return r.read().decode("utf-8", errors="replace")
+            html = r.read().decode("utf-8", errors="replace")
+            if "登录重定向" in html or "检测到异常" in html or r.status == 403:
+                _douban_blocked_log()
+                return None
+            return html
     except Exception:
         return None
+
+
+_blocked_logged = False
+
+def _douban_blocked_log():
+    global _blocked_logged
+    if not _blocked_logged:
+        _blocked_logged = True
+        print("[豆瓣] 请求被屏蔽（HTTP 403），豆瓣数据不可用。TMDB 数据不受影响。")
 
 
 def _clean(s):
