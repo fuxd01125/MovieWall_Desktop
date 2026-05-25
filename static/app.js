@@ -884,21 +884,68 @@ async function loadLibrary() {
   renderHome();
 }
 
-scanBtn.onclick = async () => {
-  const bar = document.getElementById("scanBar");
-  scanBtn.disabled = true;
-  if (bar) bar.classList.add("active");
+async function _pollProgress(bar) {
+  return new Promise((resolve) => {
+    const id = setInterval(async () => {
+      try {
+        const r = await fetch("/api/scan/progress");
+        const p = await r.json();
+        if (bar) {
+          bar.style.transform = "scaleX(" + p.progress + ")";
+          bar.title = p.message || "";
+        }
+        if (p.done) {
+          clearInterval(id);
+          resolve(p.error || null);
+        }
+      } catch (e) {
+        clearInterval(id);
+        resolve(null);
+      }
+    }, 500);
+  });
+}
+
+async function _loadAfterScan() {
   showSkeleton();
-  const res = await fetch("/api/scan", {method:"POST"});
+  const res = await fetch("/api/library");
   library = await res.json();
-  scanBtn.disabled = false;
-  if (bar) bar.classList.remove("active");
-  if (library.error) { showToast(library.error, 4000); return; }
   const s = library.stats;
-  showToast("扫描完成 - " + (s.movies + s.shows) + " 部作品 / " + s.episodes + " 集");
+  showToast("完成 - " + (s.movies + s.shows) + " 部 / " + s.episodes + " 集");
   navStack = [];
   renderHome();
+}
+
+scanBtn.onclick = async () => {
+  const bar = document.getElementById("scanBar");
+  const btn = scanBtn;
+  btn.disabled = true;
+  if (bar) { bar.classList.add("active"); bar.style.transform = "scaleX(0)"; }
+  const res = await fetch("/api/scan", {method:"POST"});
+  const data = await res.json();
+  if (!data.ok) { showToast(data.error, 4000); btn.disabled = false; return; }
+  const err = await _pollProgress(bar);
+  btn.disabled = false;
+  if (bar) bar.classList.remove("active");
+  if (err) { showToast("扫描错误: " + err, 5000); }
+  await _loadAfterScan();
 };
+
+async function updateMetadata() {
+  const bar = document.getElementById("scanBar");
+  const btn = document.getElementById("updateBtn");
+  btn.disabled = true;
+  if (bar) { bar.classList.add("active"); bar.style.transform = "scaleX(0)"; }
+  showToast("开始更新元数据...");
+  const res = await fetch("/api/update", {method:"POST"});
+  const data = await res.json();
+  if (!data.ok) { showToast(data.error, 4000); btn.disabled = false; return; }
+  const err = await _pollProgress(bar);
+  btn.disabled = false;
+  if (bar) bar.classList.remove("active");
+  if (err) { showToast("更新错误: " + err, 5000); }
+  await _loadAfterScan();
+}
 
 document.addEventListener("click", (e) => {
   if (moreMenuOpen && !e.target.closest(".more-wrap")) { moreMenuOpen = null; renderRoute(currentView); }

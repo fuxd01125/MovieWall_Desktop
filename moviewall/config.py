@@ -17,6 +17,10 @@ RATINGS_FILE = APP_DIR / "ratings.json"
 HISTORY_FILE = APP_DIR / "history.json"
 FAVORITES_FILE = APP_DIR / "favorites.json"
 
+# Auto-init DB on import
+from moviewall.database import init_db
+init_db()
+
 
 def read_json(path: Path, default):
     try:

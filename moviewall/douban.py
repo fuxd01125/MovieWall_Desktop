@@ -1,3 +1,4 @@
+"""Douban scraper — search, rating, synopsis, per-season support."""
 import http.cookiejar
 import json
 import random
@@ -7,18 +8,21 @@ import urllib.parse
 import urllib.request
 
 from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE
+from moviewall.database import (
+    save_douban_meta, save_douban_season_meta,
+    load_douban_meta, load_douban_season_meta,
+)
 
-DOUBAN_SEARCH_URL = "https://movie.douban.com/subject_search"
-DOUBAN_HOME_URL = "https://movie.douban.com/"
-DOUBAN_MOBILE_URL = "https://m.douban.com/movie/subject/{}/"
+DOUBAN_SEARCH = "https://movie.douban.com/subject_search"
+DOUBAN_HOME = "https://movie.douban.com/"
+DOUBAN_MOBILE = "https://m.douban.com/movie/subject/{}/"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
     "Accept-Language": "zh-CN,zh;q=0.9",
 }
-
 MOBILE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1",
     "Accept-Language": "zh-CN,zh;q=0.9",
 }
 
@@ -26,10 +30,8 @@ MOBILE_HEADERS = {
 def _get_opener():
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-    # Visit homepage first to get session cookie (bid)
-    req = urllib.request.Request(DOUBAN_HOME_URL, headers=HEADERS)
     try:
-        opener.open(req, timeout=15)
+        opener.open(urllib.request.Request(DOUBAN_HOME, headers=HEADERS), timeout=15)
     except Exception:
         pass
     return opener
@@ -37,142 +39,184 @@ def _get_opener():
 
 def _request(url, opener=None):
     cfg = load_config()
-    delay = float(cfg.get("douban_request_delay", 1.5))
-    time.sleep(delay + random.uniform(0, 0.5))
+    time.sleep(float(cfg.get("douban_request_delay", 1.5)) + random.uniform(0, 0.5))
     if opener is None:
         opener = _get_opener()
-    headers = dict(HEADERS, Referer="https://movie.douban.com/")
-    req = urllib.request.Request(url, headers=headers)
+    h = dict(HEADERS, Referer="https://movie.douban.com/")
     try:
-        with opener.open(req, timeout=15) as resp:
-            return resp.read().decode("utf-8", errors="replace")
+        with opener.open(urllib.request.Request(url, headers=h), timeout=15) as r:
+            return r.read().decode("utf-8", errors="replace")
     except Exception:
         return None
 
 
-def _clean_json(raw):
-    """Remove control characters that break json.loads."""
-    return re.sub(r'[\u0000-\u001f\u200e\u200f\u2028\u2029]', '', raw)
+def _clean(s):
+    return re.sub(r'[\u0000-\u001f\u200e\u200f\u2028\u2029]', '', s)
 
 
-def _parse_search_data(html):
-    """Parse window.__DATA__ from search results page."""
+def _parse_items(html):
     m = re.search(r'window\.__DATA__\s*=\s*({.*?});', html, re.DOTALL)
     if not m:
         return []
     try:
-        raw = _clean_json(m.group(1))
-        data = json.loads(raw)
-        return data.get("items", [])
+        return json.loads(_clean(m.group(1))).get("items", [])
     except Exception:
         return []
 
 
-def _extract_year_from_text(text):
-    """Extract year from text like '葬送的芙莉莲 (2023)' or '夜访吸血鬼 (1994)'."""
+def _year_from_title(text):
     m = re.search(r'(?:\(|（)(19|20)\d{2}(?:\)|）)', str(text))
     return m.group(1) if m else ""
 
 
-def search_and_fetch(title_cn, title_en, year):
-    """Search Douban by title, extract rating and id from search results JSON."""
+def _pick_best(items, year):
+    """Pick best matching item from douban search results."""
+    # Filter: only movie/TV subjects
+    valid = [i for i in items if i.get("tpl_name") in ("search_subject", None, "")]
+    if not valid:
+        return None
+    # 1) try year match
+    for item in valid:
+        iy = item.get("year", "") or _year_from_title(item.get("title", ""))
+        if year and iy and str(year) in str(iy):
+            return item
+    # 2) prefer item with a rating
+    for item in valid:
+        if item.get("rating", {}).get("value"):
+            return item
+    return valid[0]
+
+
+def _search(title, year):
+    """Search douban, return best matching item dict or None."""
     opener = _get_opener()
-    candidates = [title_cn, title_en] if title_en else [title_cn]
-
-    # Also try stripped variant (removing colons and parentheticals)
-    extras = []
-    for c in candidates:
-        stripped = re.sub(r'[：:（(][^)）]*[)）]', '', c).strip()
-        if stripped and stripped != c:
-            extras.append(stripped)
-    candidates.extend(extras)
-
-    cats_to_try = ["1002", ""]  # movie/TV cat, then all
+    candidates = [title]
+    stripped = re.sub(r'[：:（(][^)）]*[)）]', '', title).strip()
+    if stripped and stripped != title:
+        candidates.append(stripped)
 
     for t in candidates:
         if not t:
             continue
-        for cat in cats_to_try:
+        for cat in ("1002", ""):
             params = {"search_text": t}
             if cat:
                 params["cat"] = cat
-            url = DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode(params)
+            url = DOUBAN_SEARCH + "?" + urllib.parse.urlencode(params)
             html = _request(url, opener)
             if not html:
                 continue
-
-            items = _parse_search_data(html)
+            items = _parse_items(html)
             if not items:
                 continue
-
-            # Filter: only keep movie/TV subjects (exclude people, books, etc.)
-            valid = [i for i in items if i.get("tpl_name") in ("search_subject", None, "")]
-            if not valid:
-                continue
-
-            # First pass: try to match by year
-            best = None
-            for item in valid:
-                item_year = item.get("year", "") or _extract_year_from_text(item.get("title", ""))
-                if year and item_year and str(year) in str(item_year):
-                    best = item
-                    break
-
-            # Second pass: prefer item with rating > 0
-            if best is None:
-                with_rating = [i for i in valid if i.get("rating", {}).get("value")]
-                best = with_rating[0] if with_rating else valid[0]
-
-            douban_id = best.get("id", "")
-            if not douban_id:
-                continue
-
-            rating_info = best.get("rating", {}) or {}
-            rating = rating_info.get("value", "")
-            star_count = rating_info.get("star_count", "")
-
-            result = {"douban_id": douban_id}
-            if rating:
-                result["rating"] = float(rating)
-            if star_count:
-                result["star_count"] = float(star_count)
-            abstract = best.get("abstract", "") or ""
-            abstract_2 = best.get("abstract_2", "") or ""
-            if abstract:
-                result["abstract"] = abstract
-            if abstract_2:
-                result["abstract_2"] = abstract_2
-
-            return result
-
+            best = _pick_best(items, year)
+            if best:
+                return best
     return None
 
 
-def fetch_douban_synopsis(douban_id):
-    """Fetch plot synopsis from the mobile Douban page (works where desktop returns 403)."""
-    cache = read_json(METADATA_CACHE_FILE, {})
-    cache_key = f"synopsis:{douban_id}"
-    cached = cache.get(cache_key)
-    cfg = load_config()
-    if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
-        return cached.get("data")
+def _parse_rating(item):
+    r = item.get("rating") or {}
+    rating = r.get("value")
+    return {
+        "douban_id": item.get("id", ""),
+        "rating": float(rating) if rating else None,
+        "star_count": r.get("star_count"),
+        "rating_count": r.get("count"),
+        "abstract": item.get("abstract", ""),
+        "abstract_2": item.get("abstract_2", ""),
+    }
 
-    delay = float(cfg.get("douban_request_delay", 1.5))
-    time.sleep(delay + random.uniform(0, 0.5))
-    url = DOUBAN_MOBILE_URL.format(douban_id)
-    req = urllib.request.Request(url, headers=dict(MOBILE_HEADERS, Referer="https://m.douban.com/"))
+
+# ── Public API ──────────────────────────────────────────────────────
+
+def fetch_douban_meta(title, year):
+    """Fetch Douban rating + abstract for a movie/show. Returns dict or None."""
+    cache = read_json(METADATA_CACHE_FILE, {})
+    key = f"douban:{urllib.parse.quote(title)}:{year or ''}"
+    cached = cache.get(key)
+    cfg = load_config()
+    ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
+    if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < ttl:
+        result = cached["data"]
+    else:
+        item = _search(title, year)
+        if item:
+            result = _parse_rating(item)
+        else:
+            result = None
+        cache[key] = {"_cached_at": time.time(), "data": result}
+        write_json(METADATA_CACHE_FILE, cache)
+
+    # Always try synopsis
+    if result and result.get("douban_id"):
+        syn = _fetch_synopsis(result["douban_id"])
+        if syn:
+            result["synopsis"] = syn
+    return result
+
+
+def fetch_douban_by_id(douban_id):
+    """Fetch Douban data for a known ID."""
+    cache = read_json(METADATA_CACHE_FILE, {})
+    ck = f"douban_id:{douban_id}"
+    cached = cache.get(ck)
+    cfg = load_config()
+    ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
+    if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < ttl:
+        result = cached["data"]
+    else:
+        item = _search(douban_id, "")
+        result = _parse_rating(item) if item else None
+        cache[ck] = {"_cached_at": time.time(), "data": result}
+        write_json(METADATA_CACHE_FILE, cache)
+
+    if result and result.get("douban_id"):
+        syn = _fetch_synopsis(result["douban_id"])
+        if syn:
+            result["synopsis"] = syn
+    return result
+
+
+def fetch_douban_by_season(show_title, show_year, season_number):
+    """Search Douban for a specific season of a show.
+       e.g. "葬送的芙莉莲 第二季" or "Hannibal Season 2"
+    """
+    keywords = [f"{show_title} 第{season_number}季", f"{show_title} Season {season_number}"]
+    for kw in keywords:
+        item = _search(kw, show_year)
+        if item:
+            return _parse_rating(item)
+    return None
+
+
+def _fetch_synopsis(douban_id):
+    """Fetch plot synopsis from mobile Douban page."""
+    cache = read_json(METADATA_CACHE_FILE, {})
+    ck = f"synopsis:{douban_id}"
+    cached = cache.get(ck)
+    cfg = load_config()
+    ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
+    if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < ttl:
+        return cached["data"]
+
+    time.sleep(float(cfg.get("douban_request_delay", 1.5)) + random.uniform(0, 0.5))
+    url = DOUBAN_MOBILE.format(douban_id)
     synopsis = None
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(
+            urllib.request.Request(url, headers=dict(MOBILE_HEADERS, Referer="https://m.douban.com/")),
+            timeout=15,
+        ) as resp:
             html = resp.read().decode("utf-8", errors="replace")
-            # Method 1: section class="subject-intro" > p
+            # Main synopsis
             m = re.search(r'<section[^>]*class="subject-intro"[^>]*>(.*?)</section>', html, re.DOTALL)
             if m:
                 m2 = re.search(r'<p[^>]*>(.*?)</p>', m.group(1), re.DOTALL)
                 if m2:
                     synopsis = re.sub(r'<[^>]+>', '', m2.group(1)).strip()
                     synopsis = re.sub(r'\s+', ' ', synopsis)
-            # Method 2: meta description (fallback)
+            # Fallback: meta description
             if not synopsis:
                 m = re.search(r'<meta name="description"[^>]*content="([^"]*)"', html)
                 if m:
@@ -182,78 +226,9 @@ def fetch_douban_synopsis(douban_id):
                         synopsis = desc[si+3:].strip()
     except Exception:
         pass
-
-    cache[cache_key] = {"_cached_at": time.time(), "data": synopsis}
+    cache[ck] = {"_cached_at": time.time(), "data": synopsis}
     write_json(METADATA_CACHE_FILE, cache)
     return synopsis
-
-
-def get_douban_metadata(title_cn, title_en, year, media_type):
-    cfg = load_config()
-    if not cfg.get("douban_enabled", True):
-        return None
-
-    cache = read_json(METADATA_CACHE_FILE, {})
-    search_key = f"douban:{urllib.parse.quote(title_cn)}:{year or ''}"
-    cached = cache.get(search_key)
-
-    # Basic info (rating + abstract) from search results, cached 30 days
-    if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
-        result = cached["data"]
-    else:
-        try:
-            result = search_and_fetch(title_cn, title_en, year)
-        except Exception:
-            result = None
-        cache[search_key] = {"_cached_at": time.time(), "data": result}
-        write_json(METADATA_CACHE_FILE, cache)
-
-    # Always try to attach synopsis (separate cache, may already exist)
-    if result and result.get("douban_id"):
-        synopsis = fetch_douban_synopsis(result["douban_id"])
-        if synopsis:
-            result["synopsis"] = synopsis
-
-    return result
-
-
-
-def get_douban_metadata_by_id(douban_id):
-    """Fetch Douban metadata by manually provided ID, with caching."""
-    cache = read_json(METADATA_CACHE_FILE, {})
-    cache_key = f"douban_id:{douban_id}"
-    cached = cache.get(cache_key)
-    cfg = load_config()
-    if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
-        result = cached["data"]
-    else:
-        opener = _get_opener()
-        result = None
-        for cat in ["1002", ""]:
-            url = (DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode({"search_text": douban_id, "cat": cat})) if cat else \
-                  (DOUBAN_SEARCH_URL + "?" + urllib.parse.urlencode({"search_text": douban_id}))
-            html = _request(url, opener)
-            if not html:
-                continue
-            items = _parse_search_data(html)
-            for item in items:
-                if item.get("id") == douban_id and item.get("tpl_name") in ("search_subject", None, ""):
-                    rating_info = item.get("rating", {}) or {}
-                    rating = rating_info.get("value", "")
-                    result = {"douban_id": douban_id}
-                    if rating:
-                        result["rating"] = float(rating)
-                    break
-            if result:
-                break
-        cache[cache_key] = {"_cached_at": time.time(), "data": result}
-        write_json(METADATA_CACHE_FILE, cache)
-
-    if result and result.get("douban_id"):
-        synopsis = fetch_douban_synopsis(result["douban_id"])
-        if synopsis:
-            result["synopsis"] = synopsis
-    return result
 
 
 def set_douban_id_override(media_id, douban_id):
