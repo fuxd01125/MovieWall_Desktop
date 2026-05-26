@@ -461,10 +461,10 @@ function renderHome() {
     return;
   }
 
-  // ── Search or filtered tab → grid layout ──────
-  const movies = items.filter(i => i.type === "movie");
-  const shows = items.filter(i => i.type === "show");
-  const other = items.filter(i => i.type !== "movie" && i.type !== "show");
+  // ── Non-all tab or search → grid layout ─────
+  const gridMovies = items.filter(i => i.type === "movie");
+  const gridShows = items.filter(i => i.type === "show");
+  const gridOther = items.filter(i => i.type !== "movie" && i.type !== "show");
   let html = '';
 
   if (continueItems.length > 0) {
@@ -480,25 +480,36 @@ function renderHome() {
       + '<div class="section-header"><h2>搜索结果</h2><small>' + items.length + ' 项</small></div>'
       + '<div class="grid">' + items.map(renderHomeCard).join('') + '</div></section>';
   } else {
-    if (movies.length > 0) {
+    if (gridMovies.length > 0) {
       html += '<section class="section">'
-        + '<div class="section-header"><h2>电影</h2><small>' + movies.length + ' 部</small></div>'
-        + '<div class="grid">' + movies.map(renderHomeCard).join('') + '</div></section>';
+        + '<div class="section-header"><h2>电影</h2><small>' + gridMovies.length + ' 部</small></div>'
+        + '<div class="grid">' + gridMovies.map(renderHomeCard).join('') + '</div></section>';
     }
-    if (shows.length > 0) {
+    if (gridShows.length > 0) {
       html += '<section class="section">'
-        + '<div class="section-header"><h2>剧集</h2><small>' + shows.length + ' 部</small></div>'
-        + '<div class="grid">' + shows.map(renderHomeCard).join('') + '</div></section>';
+        + '<div class="section-header"><h2>剧集</h2><small>' + gridShows.length + ' 部</small></div>'
+        + '<div class="grid">' + gridShows.map(renderHomeCard).join('') + '</div></section>';
     }
-    if (other.length > 0) {
+    if (gridOther.length > 0) {
       html += '<section class="section">'
         + '<div class="section-header"><h2>其他</h2></div>'
-        + '<div class="grid">' + other.map(renderHomeCard).join('') + '</div></section>';
+        + '<div class="grid">' + gridOther.map(renderHomeCard).join('') + '</div></section>';
     }
   }
 
   app.innerHTML = html;
 }
+
+function getFilteredItems() {
+  const q = search.value.trim().toLowerCase();
+  return library.items.filter(item => {
+    if (activeTab === "anime") {
+      const ck = (item.category_key || "").toLowerCase();
+      const cn = (item.category_name || "").toLowerCase();
+      if (!ck.includes("anime") && !cn.includes("anime") && !ck.includes("动漫") && !cn.includes("动漫") && !ck.includes("动画") && !cn.includes("动画")) return false;
+    } else if (activeTab !== "all") {
+      if (item.type !== activeTab) return false;
+    }
     if (!q) return true;
     let bag = (titleOf(item) + " " + (item.title || "") + " " + (item.year || "") + " " + (item.category_name || "")).toLowerCase();
     if (item.type === "movie") bag += " " + (item.filename || "") + " " + (item.folder || "");
@@ -603,67 +614,6 @@ function renderContinueCard(entry) {
 function showSkeleton() {
   const card = '<div class="skeleton-card"><div class="skeleton-poster skeleton"></div><div class="skeleton-title skeleton"></div></div>';
   app.innerHTML = '<section class="section"><div class="grid">' + card.repeat(12) + '</div></section>';
-}
-
-function renderHome() {
-  currentView = {type:"home"};
-  renderCategoryTabs();
-  renderBreadcrumb();
-
-  if (!library.items.length) {
-    app.innerHTML = '<section class="section"><div class="empty">暂无内容。请确认路径正确，然后点击"扫描"。</div></section>';
-    return;
-  }
-
-  const items = getFilteredItems();
-  if (!items.length) {
-    app.innerHTML = '<section class="section"><div class="empty">没有匹配的内容。试试其他分类或搜索词。</div></section>';
-    return;
-  }
-
-  const hasQuery = search.value.trim().length > 0;
-  const continueItems = hasQuery ? [] : getContinueItems();
-  let html = '';
-
-  if (continueItems.length > 0) {
-    html += '<section class="section">'
-      + '<div class="section-header"><h2>继续观看</h2><small>' + continueItems.length + ' 项</small></div>'
-      + '<div class="continue-strip">'
-      + continueItems.map(renderContinueCard).join('')
-      + '</div></section>';
-  }
-
-  const movies = items.filter(i => i.type === "movie");
-  const shows = items.filter(i => i.type === "show");
-  const other = items.filter(i => i.type !== "movie" && i.type !== "show");
-
-  if (hasQuery) {
-    html += '<section class="section">'
-      + '<div class="section-header"><h2>搜索结果</h2><small>' + items.length + ' 项</small></div>'
-      + '<div class="grid">' + items.map(renderHomeCard).join('') + '</div></section>';
-  } else {
-    if (continueItems.length > 0 && movies.length > 0) {
-      html += '<section class="section">'
-        + '<div class="section-header"><h2>电影</h2></div>'
-        + '<div class="grid">' + movies.map(renderHomeCard).join('') + '</div></section>';
-    } else if (movies.length > 0) {
-      html += '<section class="section">'
-        + '<div class="section-header"><h2>电影</h2><small>' + movies.length + ' 部</small></div>'
-        + '<div class="grid">' + movies.map(renderHomeCard).join('') + '</div></section>';
-    }
-    if (shows.length > 0) {
-      html += '<section class="section">'
-        + '<div class="section-header"><h2>剧集</h2><small>' + shows.length + ' 部</small></div>'
-        + '<div class="grid">' + shows.map(renderHomeCard).join('') + '</div></section>';
-    }
-    if (other.length > 0) {
-      html += '<section class="section">'
-        + '<div class="section-header"><h2>其他</h2></div>'
-        + '<div class="grid">' + other.map(renderHomeCard).join('') + '</div></section>';
-    }
-  }
-
-  app.innerHTML = html;
 }
 
 function openDetail(id) { navigateTo({type:"detail", id}); }
