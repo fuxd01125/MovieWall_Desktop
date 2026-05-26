@@ -761,27 +761,32 @@ main {
   position: relative;
   z-index: 0;
   isolation: isolate;
-  min-height: 68vh;
+  min-height: 52vh;
   margin: 0 -48px 0;
-  padding: 80px 48px 60px;
+  padding: 72px 48px 56px;
   display: flex;
   align-items: flex-end;
   overflow: hidden;
   animation: heroIn .55s var(--ease-out-expo) both;
 }
 
-/* Full-page backdrop */
+/* Full-page backdrop — fades into background at bottom via mask */
 .hero-backdrop {
   position: absolute;
   inset: 0;
   z-index: -3;
   background-size: cover;
   background-position: center 20%;
+  background-repeat: no-repeat;
   filter: saturate(1.05) contrast(1.04);
   transform: scale(1.02);
   animation: heroKenBurns 20s ease-in-out infinite alternate;
   transition: filter .6s ease, transform .6s ease;
   will-change: transform;
+  -webkit-mask-image: linear-gradient(to bottom, #000 30%, #000 50%, transparent 82%);
+  mask-image: linear-gradient(to bottom, #000 30%, #000 50%, transparent 82%);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
 }
 
 @keyframes heroKenBurns {
@@ -796,7 +801,7 @@ main {
   z-index: -2;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(10,10,12,.12) 0%, rgba(10,10,12,.08) 25%, rgba(10,10,12,.42) 50%, rgba(10,10,12,.72) 70%, #0a0a0c 100%),
+    linear-gradient(180deg, rgba(10,10,12,.08) 0%, rgba(10,10,12,.06) 25%, rgba(10,10,12,.35) 48%, rgba(10,10,12,.72) 68%, #0a0a0c 100%),
     linear-gradient(90deg, rgba(10,10,12,.92) 0%, rgba(10,10,12,.55) 30%, rgba(10,10,12,.05) 55%, rgba(10,10,12,.65) 100%);
 }
 
@@ -1116,20 +1121,25 @@ main {
   inset: 0;
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
   transition: transform .6s var(--ease-out-expo);
+  -webkit-mask-image: linear-gradient(to bottom, #000 30%, #000 50%, transparent 82%);
+  mask-image: linear-gradient(to bottom, #000 30%, #000 50%, transparent 82%);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
 }
 
 .detail-hero:hover .detail-backdrop { transform: scale(1.06); }
 
-/* Backdrop overlays */
+/* Backdrop overlays — matches hero gradient style */
 .detail-overlay {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(to top, #0a0a0c 0%, rgba(10,10,12,.88) 34%, rgba(0,0,0,.5) 65%, transparent 100%),
-    linear-gradient(100deg, rgba(10,10,12,.82) 0%, rgba(10,10,12,.15) 55%, transparent 100%);
+    linear-gradient(to top, #0a0a0c 0%, rgba(10,10,12,.92) 35%, rgba(10,10,12,.45) 60%, transparent 100%),
+    linear-gradient(100deg, rgba(10,10,12,.88) 0%, rgba(10,10,12,.12) 55%, transparent 100%);
 }
 
 /* Content grid */
@@ -1835,8 +1845,9 @@ main {
   z-index: 5;
   width: 44px;
   height: 44px;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
   border: 1px solid rgba(255,255,255,.1);
   background: rgba(0,0,0,.5);
@@ -1845,10 +1856,10 @@ main {
   color: #fff;
   cursor: pointer;
   line-height: 1;
+  padding: 0;
   transition: transform .3s var(--ease-spring), background .3s ease, border-color .2s;
   -webkit-user-select: none;
   user-select: none;
-  overflow: hidden;
 }
 
 .back-hero-btn:hover {
@@ -1862,8 +1873,8 @@ main {
 
 .back-hero-btn svg {
   display: block;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
 }
 
 /* =================================================================
@@ -2127,8 +2138,8 @@ mark {
   /* Hero mobile */
   .hero {
     margin: 0 -16px 0;
-    padding: 80px 16px 50px;
-    min-height: 55vh;
+    padding: 64px 16px 40px;
+    min-height: 44vh;
   }
 
   .hero-poster { display: none; }
@@ -2203,8 +2214,8 @@ mark {
 
   .hero {
     margin: 0 -12px 0;
-    padding: 72px 12px 40px;
-    min-height: 50vh;
+    padding: 56px 12px 32px;
+    min-height: 40vh;
   }
 
   .hero-title { font-size: 26px; }
