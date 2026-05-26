@@ -1,5 +1,5 @@
 {
-  "library_root": "F:\\Download\\影视",
+  "library_root": "D:\\Movies",
   "categories": {
     "Movies": "电影",
     "TV Shows": "剧集",
@@ -8,13 +8,17 @@
   "players": [
     {
       "name": "PotPlayer",
-      "path": "D:\\software\\PotPlayer\\PotPlayerMini64.exe"
+      "path": "C:\\Program Files\\PotPlayer\\PotPlayerMini64.exe"
+    },
+    {
+      "name": "VLC",
+      "path": "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
     }
   ],
   "generate_thumbnails": true,
   "thumbnail_second": 60,
   "metadata_enabled": true,
-  "tmdb_api_key": "1f0ae1d4ee1bf121df31567223f33928",
+  "tmdb_api_key": "your_tmdb_api_key_here",
   "tmdb_language": "zh-CN",
   "metadata_cache_days": 60,
   "douban_enabled": true,
@@ -23,5 +27,5 @@
   "log_level": "INFO",
   "enable_file_log": true,
   "history_limit": 500,
-  "potplayer_dpl_path": "D:\\software\\PotPlayer\\Playlist\\PotPlayerMini64.dpl"
+  "potplayer_dpl_path": "C:\\Program Files\\PotPlayer\\Playlist\\PotPlayerMini64.dpl"
 }
