@@ -5,6 +5,8 @@ from flask import Flask
 
 from moviewall.config import PACKAGED_DIR
 
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 xdfu. See the LICENSE file for details.
 
 def create_app():
     app = Flask(
