@@ -123,6 +123,7 @@ def clear_tmdb_cache(media_id, title):
     actually fetches fresh data from TMDB instead of stale cached responses.
     Matches against both normalized title and the raw key prefix to handle
     different separators (underscore vs space in cache keys).
+    Also clears by media_id to handle title-change scenarios.
     """
     with cache_lock:
         cache = read_json(METADATA_CACHE_FILE, {})
@@ -130,16 +131,51 @@ def clear_tmdb_cache(media_id, title):
         nk = normalize_key(title)
         nk_alt = nk.replace(" ", "_")
         for k in list(cache.keys()):
-            if k.startswith("tmdb:") or nk in k or nk_alt in k:
+            if k.startswith("tmdb:") or nk in k or nk_alt in k or k.endswith(f":{media_id}"):
                 keys_to_delete.append(k)
-        for k in keys_to_delete:
+        # Also delete season caches for this media
+        for k in list(cache.keys()):
+            if k.startswith(f"season:{media_id}:") or k.startswith(f"season:{nk}:"):
+                keys_to_delete.append(k)
+        for k in set(keys_to_delete):
             del cache[k]
         write_json(METADATA_CACHE_FILE, cache)
     if keys_to_delete:
-        tmdb_count = sum(1 for k in keys_to_delete if k.startswith("tmdb:"))
-        meta_count = len(keys_to_delete) - tmdb_count
+        tmdb_count = sum(1 for k in set(keys_to_delete) if k.startswith("tmdb:"))
+        meta_count = len(set(keys_to_delete)) - tmdb_count
         log.info("CLEAR CACHE: deleted %d entries for key=%s (tmdb_api=%d metadata=%d)",
-                 len(keys_to_delete), nk, tmdb_count, meta_count)
+                 len(set(keys_to_delete)), nk, tmdb_count, meta_count)
+
+
+def _tmdb_search_type(endpoint_type, title, year, lang, local_season_count):
+    """Search TMDB with a specific type (movie or tv), return scored results or None."""
+    endpoint = "search/movie" if endpoint_type == "movie" else "search/tv"
+    params = {"query": title, "language": lang, "include_adult": "false", "page": 1}
+    if year:
+        params["year" if endpoint_type == "movie" else "first_air_date_year"] = year
+    results = (tmdb_request(endpoint, params) or {}).get("results") or []
+    if not results:
+        return None
+    scored = [(_tmdb_match_score(r, title, year, endpoint_type, local_season_count), r) for r in results]
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return scored
+
+
+def _tmdb_fetch_details(tmdb_id, media_type, lang, best, title):
+    """Fetch full details from TMDB for a given ID and type."""
+    details_endpoint = f"movie/{tmdb_id}" if media_type == "movie" else f"tv/{tmdb_id}"
+    details = tmdb_request(details_endpoint, {"language": lang}) or {}
+    return {
+        "source": "TMDB", "tmdb_id": tmdb_id, "_detected_type": media_type,
+        "title": details.get("title") or details.get("name") or best.get("title") or best.get("name") or title,
+        "original_title": details.get("original_title") or details.get("original_name") or "",
+        "overview": details.get("overview") or best.get("overview") or "",
+        "rating": details.get("vote_average") or best.get("vote_average") or "",
+        "date": details.get("release_date") or details.get("first_air_date") or "",
+        "genres": [g.get("name") for g in details.get("genres", []) if g.get("name")],
+        "poster_url": tmdb_image(details.get("poster_path") or best.get("poster_path"), "w500"),
+        "backdrop_url": tmdb_image(details.get("backdrop_path") or best.get("backdrop_path"), "w1280"),
+    }
 
 
 def get_tmdb_metadata(title, year, media_type, force_refresh=False, local_season_count=0):
@@ -156,8 +192,6 @@ def get_tmdb_metadata(title, year, media_type, force_refresh=False, local_season
         if cached and time.time() - cached.get("_cached_at", 0) < int(cfg.get("metadata_cache_days", 30)) * 86400:
             cached_data = cached.get("data", {})
             if not cached_data.get("tmdb_id"):
-                # Empty cache entry — if force_refresh is not set, still skip
-                # because we already know there's no match from a previous scan
                 log.info("TMDB CACHE HIT (empty): key=%s", key)
                 return {}
             fake = {
@@ -179,12 +213,22 @@ def get_tmdb_metadata(title, year, media_type, force_refresh=False, local_season
     if force_refresh:
         log.info("TMDB FORCE REFRESH: key=%s", key)
 
-    endpoint = "search/movie" if media_type == "movie" else "search/tv"
-    params = {"query": title, "language": lang, "include_adult": "false", "page": 1}
-    if year:
-        params["year" if media_type == "movie" else "first_air_date_year"] = year
-    results = (tmdb_request(endpoint, params) or {}).get("results") or []
-    if not results:
+    # Primary search with given media_type
+    scored = _tmdb_search_type(media_type, title, year, lang, local_season_count)
+
+    # Fallback: if primary search fails, try the opposite type
+    # This fixes TV shows being searched as movies and vice versa
+    other_type = "tv" if media_type == "movie" else "movie"
+    if scored is None or scored[0][0] < _TMDB_MATCH_THRESHOLD * 0.6:
+        other_scored = _tmdb_search_type(other_type, title, year, lang, local_season_count)
+        if other_scored and (scored is None or other_scored[0][0] > scored[0][0]):
+            log.info("TMDB CROSS-TYPE: primary=%s score=%s -> fallback=%s score=%s",
+                     media_type, scored[0][0] if scored else "none",
+                     other_type, other_scored[0][0])
+            scored = other_scored
+            media_type = other_type
+
+    if not scored:
         with cache_lock:
             cache = read_json(METADATA_CACHE_FILE, {})
             cache[key] = {"_cached_at": time.time(), "data": {}}
@@ -192,12 +236,9 @@ def get_tmdb_metadata(title, year, media_type, force_refresh=False, local_season
         log.info("TMDB SEARCH: query=%s → no results", title)
         return {}
 
-    scored = [(_tmdb_match_score(r, title, year, media_type, local_season_count), r) for r in results]
-    scored.sort(key=lambda x: x[0], reverse=True)
-
     best_score, best = scored[0]
     if best_score < _TMDB_MATCH_THRESHOLD:
-        _log_tmdb_search(title, year, media_type, results, scored, None)
+        _log_tmdb_search(title, year, media_type, [r for _, r in scored], scored, None)
         with cache_lock:
             cache = read_json(METADATA_CACHE_FILE, {})
             cache[key] = {"_cached_at": time.time(), "data": {}}
@@ -206,23 +247,10 @@ def get_tmdb_metadata(title, year, media_type, force_refresh=False, local_season
                  title, best_score, _TMDB_MATCH_THRESHOLD)
         return {}
 
-    _log_tmdb_search(title, year, media_type, results, scored, best)
+    _log_tmdb_search(title, year, media_type, [r for _, r in scored], scored, best)
 
     tmdb_id = best.get("id")
-    details_endpoint = f"movie/{tmdb_id}" if media_type == "movie" else f"tv/{tmdb_id}"
-    details = tmdb_request(details_endpoint, {"language": lang}) or {}
-
-    data = {
-        "source": "TMDB", "tmdb_id": tmdb_id,
-        "title": details.get("title") or details.get("name") or best.get("title") or best.get("name") or title,
-        "original_title": details.get("original_title") or details.get("original_name") or "",
-        "overview": details.get("overview") or best.get("overview") or "",
-        "rating": details.get("vote_average") or best.get("vote_average") or "",
-        "date": details.get("release_date") or details.get("first_air_date") or "",
-        "genres": [g.get("name") for g in details.get("genres", []) if g.get("name")],
-        "poster_url": tmdb_image(details.get("poster_path") or best.get("poster_path"), "w500"),
-        "backdrop_url": tmdb_image(details.get("backdrop_path") or best.get("backdrop_path"), "w1280"),
-    }
+    data = _tmdb_fetch_details(tmdb_id, media_type, lang, best, title)
     with cache_lock:
         cache = read_json(METADATA_CACHE_FILE, {})
         cache[key] = {"_cached_at": time.time(), "data": data}
@@ -342,25 +370,38 @@ def attach_all_metadata(item, force_refresh=False):
         log.info("TMDB RESULT: title=%s tmdb_id=%s score=%s",
                  tmdb_data.get("title"), tmdb_data.get("tmdb_id"), "OK")
 
+    # Use detected type from TMDB if available (handles cross-type fallback)
+    detected_type = tmdb_data.get("_detected_type", media_type) if tmdb_data else media_type
+    if detected_type != media_type:
+        log.info("TMDB TYPE MISMATCH: initial=%s detected=%s for %s",
+                 media_type, detected_type, query_title)
+
     # Final consistency check
     if not _final_consistency_check(tmdb_data, query_title, query_year, media_type, local_season_count):
         tmdb_data = {}
 
     season_data = {}
     if tmdb_data and tmdb_data.get("tmdb_id"):
-        if media_type == "tv":
+        # Only fetch seasons if TMDB detected it as a TV show
+        # This prevents fetching seasons for movies misclassified as TV
+        if detected_type == "tv" or (detected_type == media_type and media_type == "tv"):
             lang = cfg.get("tmdb_language", "zh-CN") or "zh-CN"
             season_data = fetch_tmdb_seasons(tmdb_data["tmdb_id"], local_seasons, lang)
 
     # ALWAYS save — even empty clears stale data
     tmdb_store = dict(tmdb_data) if tmdb_data else {}
+    # Remove internal tracking fields before saving
+    tmdb_store.pop("_detected_type", None)
     if season_data:
         tmdb_store["_season_data"] = season_data
+    elif "_season_data" in tmdb_store:
+        # Ensure old season data is cleared when item is not a TV show
+        del tmdb_store["_season_data"]
     save_tmdb_meta(media_id, tmdb_store)
     log.info("ATTACH SAVED: media_id=%s tmdb_id=%s season_count=%d",
              media_id, tmdb_store.get("tmdb_id"), len(season_data))
 
-    if media_type == "tv" and season_data:
+    if detected_type == "tv" and season_data:
         from moviewall.database import load_tmdb_meta
         from_db = load_tmdb_meta(media_id)
         _log_season_poster_chain(media_id, query_title, season_data,
@@ -404,7 +445,7 @@ def attach_all_metadata(item, force_refresh=False):
             sn = season.get("season_number")
             if not sn:
                 continue
-            sdata = fetch_douban_by_season(show_title, query_year, sn, orig_title_show)
+            sdata = fetch_douban_by_season(show_title, query_year, sn, orig_title_show, force_refresh)
             if sdata:
                 save_douban_season_meta(season["id"], media_id, sn, sdata)
                 season_meta_db[str(sn)] = sdata
