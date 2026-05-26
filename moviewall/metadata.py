@@ -178,13 +178,21 @@ def _tmdb_fetch_details(tmdb_id, media_type, lang, best, title):
     }
 
 
-def get_tmdb_metadata(title, year, media_type, force_refresh=False, local_season_count=0):
+def get_tmdb_metadata(title, year, media_type, force_refresh=False, local_season_count=0, existing_tmdb_id=None):
+    """Search TMDB for metadata.
+    
+    Key improvements:
+    1. Language fallback: zh-CN → en-US when primary search fails
+    2. ID persistence: reuse existing_tmdb_id when available (skip re-search)
+    3. Cross-type fallback: try opposite media type when primary fails
+    """
     cfg = load_config()
     if not cfg.get("metadata_enabled", True) or not (cfg.get("tmdb_api_key") or "").strip():
         return {}
     lang = cfg.get("tmdb_language", "zh-CN") or "zh-CN"
     key = f"{media_type}:{normalize_key(title)}:{year}:{lang}"
 
+    # ── Cache check ────────────────────────────────────────────────
     if not force_refresh:
         with cache_lock:
             cache = read_json(METADATA_CACHE_FILE, {})
@@ -211,29 +219,53 @@ def get_tmdb_metadata(title, year, media_type, force_refresh=False, local_season
                         key, cached_data["tmdb_id"], score)
 
     if force_refresh:
-        log.info("TMDB FORCE REFRESH: key=%s", key)
+        log.info("TMDB FORCE REFRESH: key=%s existing_tmdb_id=%s", key, existing_tmdb_id)
 
-    # Primary search with given media_type
+    # ── Primary search with given media_type and language ───────────
     scored = _tmdb_search_type(media_type, title, year, lang, local_season_count)
+    search_attempts = [(media_type, lang, scored)]
 
-    # Fallback: if primary search fails, try the opposite type
-    # This fixes TV shows being searched as movies and vice versa
+    # Language fallback: if zh-CN fails, try en-US
+    if (scored is None or scored[0][0] < _TMDB_MATCH_THRESHOLD) and lang != "en-US":
+        en_scored = _tmdb_search_type(media_type, title, year, "en-US", local_season_count)
+        if en_scored and (scored is None or en_scored[0][0] > scored[0][0]):
+            log.info("TMDB LANG-FALLBACK: zh-CN score=%s -> en-US score=%s",
+                     scored[0][0] if scored else "none", en_scored[0][0])
+            scored = en_scored
+            search_attempts.append((media_type, "en-US", en_scored))
+
+    # Cross-type fallback: try opposite media type in both languages
     other_type = "tv" if media_type == "movie" else "movie"
     if scored is None or scored[0][0] < _TMDB_MATCH_THRESHOLD * 0.6:
-        other_scored = _tmdb_search_type(other_type, title, year, lang, local_season_count)
-        if other_scored and (scored is None or other_scored[0][0] > scored[0][0]):
-            log.info("TMDB CROSS-TYPE: primary=%s score=%s -> fallback=%s score=%s",
-                     media_type, scored[0][0] if scored else "none",
-                     other_type, other_scored[0][0])
-            scored = other_scored
-            media_type = other_type
+        for f_lang in [lang, "en-US"]:
+            other_scored = _tmdb_search_type(other_type, title, year, f_lang, local_season_count)
+            if other_scored and (scored is None or other_scored[0][0] > scored[0][0]):
+                log.info("TMDB CROSS-TYPE: primary=%s lang=%s score=%s -> fallback=%s lang=%s score=%s",
+                         media_type, lang, scored[0][0] if scored else "none",
+                         other_type, f_lang, other_scored[0][0])
+                scored = other_scored
+                media_type = other_type
+                break
 
     if not scored:
+        # Fallback: if search found nothing but we have existing_tmdb_id, keep it
+        # This ensures force_refresh doesn't lose valid data due to search failure
+        if existing_tmdb_id:
+            log.info("TMDB SEARCH FALLBACK: no search results, reusing existing tmdb_id=%s for %s",
+                     existing_tmdb_id, title)
+            data = _tmdb_fetch_details(existing_tmdb_id, media_type, lang, {"id": existing_tmdb_id}, title)
+            if data and data.get("title"):
+                data["_was_fallback"] = True
+                with cache_lock:
+                    cache = read_json(METADATA_CACHE_FILE, {})
+                    cache[key] = {"_cached_at": time.time(), "data": data}
+                    write_json(METADATA_CACHE_FILE, cache)
+                return data
         with cache_lock:
             cache = read_json(METADATA_CACHE_FILE, {})
             cache[key] = {"_cached_at": time.time(), "data": {}}
             write_json(METADATA_CACHE_FILE, cache)
-        log.info("TMDB SEARCH: query=%s → no results", title)
+        log.info("TMDB SEARCH: query=%s -> no results after all attempts", title)
         return {}
 
     best_score, best = scored[0]
@@ -258,9 +290,10 @@ def get_tmdb_metadata(title, year, media_type, force_refresh=False, local_season
     return data
 
 
-def fetch_tmdb_seasons(tmdb_id, seasons_list, lang):
+def fetch_tmdb_seasons(tmdb_id, seasons_list, lang, force_refresh=False):
     """Fetch per-season TMDB metadata (rating, air_date, overview, poster).
     Falls back to en-US for overview when the preferred language has none.
+    When force_refresh=True, always fetches fresh data and updates cache.
     """
     with cache_lock:
         cache = read_json(METADATA_CACHE_FILE, {})
@@ -270,12 +303,12 @@ def fetch_tmdb_seasons(tmdb_id, seasons_list, lang):
         if not sn:
             continue
         ck = f"season:{tmdb_id}:{sn}:{lang}"
-        with cache_lock:
-            cached = cache.get(ck)
-            if cached and time.time() - cached.get("_cached_at", 0) < int(load_config().get("metadata_cache_days", 30)) * 86400:
-                sdata = cached.get("data", {})
-            else:
-                sdata = None
+        sdata = None
+        if not force_refresh:
+            with cache_lock:
+                cached = cache.get(ck)
+                if cached and time.time() - cached.get("_cached_at", 0) < int(load_config().get("metadata_cache_days", 30)) * 86400:
+                    sdata = cached.get("data", {})
         if sdata is None:
             sdata = tmdb_request(f"tv/{tmdb_id}/season/{sn}", {"language": lang}) or {}
             if sdata:
@@ -344,6 +377,11 @@ def attach_all_metadata(item, force_refresh=False):
     """Fetch TMDB + Douban metadata for an item, store in DB.
     When force_refresh=True, always skips the metadata cache and clears old DB data.
     ALWAYS calls save_tmdb_meta() — even with empty — to clear stale metadata.
+    
+    Key fixes:
+    - Preserves existing tmdb_id during force_refresh to prevent re-search mismatches
+    - Does NOT write Douban synopsis into TMDB overview (no metadata pollution)
+    - Douban synopsis fallback happens at API response layer (build_library_dict)
     """
     media_id = item["id"]
     media_type = "movie" if item.get("type") == "movie" else "tv"
@@ -361,10 +399,20 @@ def attach_all_metadata(item, force_refresh=False):
     log.info("ATTACH METADATA: media_id=%s title=%s force_refresh=%s",
              media_id, query_title, force_refresh)
 
+    # Load existing TMDB data for ID persistence
+    existing_tmdb_id = None
+    if force_refresh:
+        from moviewall.database import load_tmdb_meta
+        existing = load_tmdb_meta(media_id)
+        if existing and existing.get("tmdb_id"):
+            existing_tmdb_id = existing["tmdb_id"]
+            log.info("TMDB ID PERSIST: existing tmdb_id=%s for %s", existing_tmdb_id, query_title)
+
     # Fetch TMDB — skip cache if force_refresh
     tmdb_data = get_tmdb_metadata(query_title, query_year, media_type,
                                   force_refresh=force_refresh,
-                                  local_season_count=local_season_count)
+                                  local_season_count=local_season_count,
+                                  existing_tmdb_id=existing_tmdb_id)
 
     if tmdb_data:
         log.info("TMDB RESULT: title=%s tmdb_id=%s score=%s",
@@ -382,20 +430,17 @@ def attach_all_metadata(item, force_refresh=False):
 
     season_data = {}
     if tmdb_data and tmdb_data.get("tmdb_id"):
-        # Only fetch seasons if TMDB detected it as a TV show
-        # This prevents fetching seasons for movies misclassified as TV
         if detected_type == "tv" or (detected_type == media_type and media_type == "tv"):
             lang = cfg.get("tmdb_language", "zh-CN") or "zh-CN"
-            season_data = fetch_tmdb_seasons(tmdb_data["tmdb_id"], local_seasons, lang)
+            season_data = fetch_tmdb_seasons(tmdb_data["tmdb_id"], local_seasons, lang, force_refresh)
 
     # ALWAYS save — even empty clears stale data
     tmdb_store = dict(tmdb_data) if tmdb_data else {}
-    # Remove internal tracking fields before saving
     tmdb_store.pop("_detected_type", None)
+    tmdb_store.pop("_was_fallback", None)
     if season_data:
         tmdb_store["_season_data"] = season_data
     elif "_season_data" in tmdb_store:
-        # Ensure old season data is cleared when item is not a TV show
         del tmdb_store["_season_data"]
     save_tmdb_meta(media_id, tmdb_store)
     log.info("ATTACH SAVED: media_id=%s tmdb_id=%s season_count=%d",
@@ -412,7 +457,7 @@ def attach_all_metadata(item, force_refresh=False):
         if tmdb_data.get("title"):
             item["display_title"] = tmdb_data["title"]
 
-    # ── Douban (show-level) ──────────────────────────────────────
+    # ── Douban (show-level) — stored separately, NOT written into TMDB overview ──
     if douban_ok:
         from moviewall.douban import fetch_douban_meta, fetch_douban_by_id
         overrides = cfg.get("douban_id_overrides", {})
@@ -427,11 +472,6 @@ def attach_all_metadata(item, force_refresh=False):
         if douban_data:
             save_douban_meta(media_id, douban_data)
             meta["douban"] = dict(douban_data)
-            # Only use show-level Douban synopsis if TMDB has no overview at all
-            if douban_data.get("synopsis") and tmdb_data and not tmdb_data.get("overview", "").strip():
-                overview_override = dict(tmdb_data)
-                overview_override["overview"] = douban_data["synopsis"]
-                save_tmdb_meta(media_id, {**overview_override, "_season_data": season_data})
 
     item["metadata"] = meta
 
