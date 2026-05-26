@@ -555,7 +555,7 @@ function renderDoubanTags(item) {
 
 function detailHero(item, bodyHtml) {
   const bg = backdropUrl(item);
-  const poster = artworkUrl(item, "poster") || artworkUrl(item, "thumb");
+  const poster = tmdb(item).poster_url || artworkUrl(item, "poster") || artworkUrl(item, "thumb");
   return '<section class="detail-hero">'
     + (bg ? '<div class="detail-backdrop" style="background-image:url(\'' + bg + '\')"></div>' : '')
     + '<div class="detail-overlay"></div>'
@@ -667,7 +667,7 @@ function renderSeasonCard(show, season, expanded) {
   const sMeta = sm[String(season.season_number)] || {};
   const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
   const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
-  const seasonPoster = artworkUrl(season, "poster") || tmdbSeasonData.poster_url || sMeta.poster_url || "";
+  const seasonPoster = tmdbSeasonData.poster_url || sMeta.poster_url || artworkUrl(season, "poster") || "";
   const moreId = "smore-" + show.id + "-" + season.season_number;
   const showMore = seasonMoreOpen === moreId;
   const moreHtml = '<div class="season-more-wrap" onclick="event.stopPropagation()">'
@@ -703,7 +703,7 @@ function renderInlineEpisodes(show, season) {
   const sMeta = sm[String(season.season_number)] || {};
   const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
   const seasonSynopsis = sMeta.synopsis || tmdbSeasonData.overview || "";
-  const seasonPoster = artworkUrl(season, "poster") || tmdbSeasonData.poster_url || sMeta.poster_url || "";
+  const seasonPoster = tmdbSeasonData.poster_url || sMeta.poster_url || artworkUrl(season, "poster") || "";
   let detailHtml = '';
   if (seasonSynopsis || seasonPoster || sMeta.cast_info || sMeta.air_date) {
     detailHtml = '<div class="season-detail-card">'

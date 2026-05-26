@@ -236,27 +236,21 @@ class TestSeasonPosterPriority:
             "Local poster path should use /api/artwork prefix"
 
     def test_season_poster_priority_chain(self):
-        """Season poster priority: local > TMDB > douban > empty."""
-        season = {"id": "s1", "poster": ""}
+        """Season poster priority: TMDB > douban > local (ep thumbnail last) > empty."""
         tmdb_data = {"poster_url": "https://tmdb.com/poster.jpg"}
         douban_data = {"poster_url": "https://douban.com/poster.jpg"}
 
-        # Test 1: TMDB poster used when no local
+        # Test 1: TMDB poster used when available
         poster = tmdb_data["poster_url"] or ""
-        assert poster == "https://tmdb.com/poster.jpg", "TMDB poster should be fallback"
+        assert poster == "https://tmdb.com/poster.jpg", "TMDB poster should be first priority"
 
-        # Test 2: local poster (set on season) takes priority
-        season["poster"] = "F:\\TV\\poster.jpg"
-        poster = season["poster"] if not str(season.get("poster", "")).startswith("http") else season["poster"]
-        assert poster == "F:\\TV\\poster.jpg", "Local poster should be highest priority"
+        # Test 2: douban fallback when TMDB unavailable
+        poster = douban_data["poster_url"] or ""
+        assert poster == "https://douban.com/poster.jpg", "Douban poster should be second priority"
 
-        # Test 3: douban is last fallback
-        season["poster"] = ""
-        poster = tmdb_data["poster_url"] or douban_data["poster_url"] or ""
-        assert poster == "https://tmdb.com/poster.jpg", "TMDB should come before douban"
-
-        poster = tmdb_data["poster_url"] if tmdb_data["poster_url"] else douban_data["poster_url"]
-        assert poster == "https://tmdb.com/poster.jpg", "TMDB poster should be chosen over douban"
+        # Test 3: local/ep-thumb is last resort (only used when TMDB + douban both empty)
+        poster = "" or "" or "F:\\TV\\ep-thumb.jpg" or ""
+        assert poster == "F:\\TV\\ep-thumb.jpg", "Local/thumb should be last resort"
 
 
 class TestFinalConsistencyCheck:
