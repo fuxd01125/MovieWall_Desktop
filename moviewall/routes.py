@@ -45,6 +45,11 @@ def find_media_by_id(media_id):
         meta["tmdb"] = tmdb
     if douban:
         meta["douban"] = douban
+        # API-layer fallback: Douban synopsis when TMDB overview empty
+        # (avoids metadata pollution at DB layer)
+        if tmdb and not tmdb.get("overview", "").strip() and douban.get("synopsis", "").strip():
+            meta["tmdb"] = dict(tmdb)
+            meta["tmdb"]["overview"] = douban["synopsis"]
     item["metadata"] = meta
     if item["type"] == "show":
         conn2 = get_conn()
@@ -134,6 +139,11 @@ def register_routes(app):
             log.warning("Slow request: %s %s (%.2fs)", request.method, request.path, elapsed)
         elif elapsed > 0.1:
             log.info("Request: %s %s (%.2fs)", request.method, request.path, elapsed)
+        # Prevent browser caching of API responses to ensure fresh data
+        if request.path.startswith("/api/"):
+            resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            resp.headers["Pragma"] = "no-cache"
+            resp.headers["Expires"] = "0"
         return resp
 
     @app.route("/")
@@ -413,17 +423,11 @@ def register_routes(app):
         douban_data = None
 
         if douban_id:
-            # Try auto-fetch (may fail due to Douban WAF)
             douban_data = fetch_douban_by_id(douban_id)
             if douban_data and item:
                 save_douban_meta(media_id, douban_data)
-                if douban_data.get("synopsis"):
-                    tm = load_tmdb_meta(media_id)
-                    if tm:
-                        tm["overview"] = douban_data["synopsis"]
-                        save_tmdb_meta(media_id, {**tm, "_season_data": tm.get("_season_data")})
 
-        # If auto-fetch failed or user provided manual data, save manually
+        # Save manual data if provided (separate from TMDB overview)
         if manual_rating is not None or manual_synopsis:
             conn = get_conn()
             try:
@@ -444,11 +448,6 @@ def register_routes(app):
                 raise
             finally:
                 conn.close()
-            if manual_synopsis and item:
-                tm = load_tmdb_meta(media_id)
-                if tm:
-                    tm["overview"] = manual_synopsis
-                    save_tmdb_meta(media_id, {**tm, "_season_data": tm.get("_season_data")})
 
         return jsonify({"ok": True, "douban": douban_data})
 
