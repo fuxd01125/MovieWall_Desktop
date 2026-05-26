@@ -375,10 +375,17 @@ function renderHero(item) {
 
   const typeLabel = isShow ? ((item.season_count || 0) + ' 季 · ' + (item.episode_count || 0) + ' 集') : '电影';
 
-  return '<div class="hero' + (hist ? ' is-continue' : '') + '">'
-    + (backdropRaw ? '<div class="hero-backdrop" style="background-image:url(\'' + backdropRaw + '\')"></div>' : '')
-    + '<div class="hero-gradient"></div>'
-    + '<div class="hero-vignette"></div>'
+  // Page-level full-viewport backdrop (image + gradient overlay, 100vh)
+  let pageBg = '';
+  if (backdropRaw) {
+    pageBg += '<div class="page-backdrop">'
+      + '<div class="page-backdrop-img" style="background-image:url(\'' + backdropRaw + '\')"></div>'
+      + '<div class="page-backdrop-overlay"></div>'
+      + '</div>';
+  }
+
+  return pageBg
+    + '<div class="hero' + (hist ? ' is-continue' : '') + '">'
     + '<div class="hero-content">'
     + '<div class="hero-badge">' + (hist ? '继续观看' : '今日推荐') + '</div>'
     + '<h1 class="hero-title">' + escapeHtml(titleOf(item)) + '</h1>'
@@ -395,7 +402,6 @@ function renderHero(item) {
     + '<button class="cta-btn secondary" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')">详情</button>'
     + '</div></div>'
     + (posterRaw ? '<div class="hero-poster"><img src="' + posterRaw + '" loading="lazy" alt=""></div>' : '')
-    + '<div class="hero-bottom-fade"></div>'
     + '</div>';
 }
 
@@ -774,12 +780,21 @@ function renderDoubanTags(item) {
 function detailHero(item, bodyHtml) {
   const bg = backdropUrl(item);
   const poster = tmdb(item).poster_url || artworkUrl(item, "poster") || artworkUrl(item, "thumb");
-  return '<section class="detail-hero cinematic-detail">'
+
+  // Full-viewport backdrop layer
+  let pageBg = '';
+  if (bg) {
+    pageBg += '<div class="page-backdrop">'
+      + '<div class="page-backdrop-img" style="background-image:url(\'' + bg + '\')"></div>'
+      + '<div class="page-backdrop-overlay"></div>'
+      + '</div>';
+  }
+
+  return pageBg
+    + '<section class="detail-hero cinematic-detail">'
     + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回" aria-label="返回">'
     + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
     + '</button>'
-    + (bg ? '<div class="detail-backdrop" style="background-image:url(\'' + bg + '\')"></div>' : '')
-    + '<div class="detail-overlay"></div>'
     + '<div class="detail-content">'
     + '<div class="detail-poster">'
     + (poster ? '<img src="' + poster + '" loading="lazy">' : '<div class="placeholder">' + escapeHtml(titleOf(item)) + '</div>')

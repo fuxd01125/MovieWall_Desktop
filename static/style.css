@@ -360,6 +360,8 @@ main {
    ================================================================= */
 
 .section {
+  position: relative;
+  z-index: 1;
   margin-top: 36px;
   animation: sectionIn .45s var(--ease-out-expo) both;
 }
@@ -754,39 +756,33 @@ main {
 .rating-badge.douban-count { background: rgba(255,255,255,.06); color: var(--muted); font-weight: 500; }
 
 /* =================================================================
-   HERO BANNER
+   FULL-PAGE BACKDROP LAYER
+   Absolute-positioned within main — covers 100vh, sits behind all content.
+   Background image fills the viewport, then a long gradient (100vh)
+   transitions seamlessly from image → dark background. No hard cutoff.
    ================================================================= */
 
-.hero {
-  position: relative;
+.page-backdrop {
+  position: absolute;
+  top: 0;
+  left: -48px;
+  right: -48px;
+  height: 100vh;
   z-index: 0;
-  isolation: isolate;
-  min-height: 52vh;
-  margin: 0 -48px 0;
-  padding: 72px 48px 56px;
-  display: flex;
-  align-items: flex-end;
+  pointer-events: none;
   overflow: hidden;
-  animation: heroIn .55s var(--ease-out-expo) both;
 }
 
-/* Full-page backdrop — fades into background at bottom via mask */
-.hero-backdrop {
+.page-backdrop-img {
   position: absolute;
   inset: 0;
-  z-index: -3;
   background-size: cover;
   background-position: center 20%;
   background-repeat: no-repeat;
   filter: saturate(1.05) contrast(1.04);
   transform: scale(1.02);
-  animation: heroKenBurns 20s ease-in-out infinite alternate;
-  transition: filter .6s ease, transform .6s ease;
+  animation: heroKenBurns 22s ease-in-out infinite alternate;
   will-change: transform;
-  -webkit-mask-image: linear-gradient(to bottom, #000 30%, #000 50%, transparent 82%);
-  mask-image: linear-gradient(to bottom, #000 30%, #000 50%, transparent 82%);
-  -webkit-mask-size: 100% 100%;
-  mask-size: 100% 100%;
 }
 
 @keyframes heroKenBurns {
@@ -794,26 +790,40 @@ main {
   to { transform: scale(1.07) translate3d(-1%, .6%, 0); }
 }
 
-/* Gradient overlay — sits above backdrop, below content */
-.hero-gradient {
+/* Gradient overlay: full 100vh — from transparent image down to solid dark bg.
+   Horizontal layer darkens the left side for title readability. */
+.page-backdrop-overlay {
   position: absolute;
   inset: 0;
-  z-index: -2;
-  pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(10,10,12,.08) 0%, rgba(10,10,12,.06) 25%, rgba(10,10,12,.35) 48%, rgba(10,10,12,.72) 68%, #0a0a0c 100%),
-    linear-gradient(90deg, rgba(10,10,12,.92) 0%, rgba(10,10,12,.55) 30%, rgba(10,10,12,.05) 55%, rgba(10,10,12,.65) 100%);
+    linear-gradient(to bottom,
+      transparent 0%,
+      rgba(10,10,12, 0.06) 20%,
+      rgba(10,10,12, 0.28) 42%,
+      rgba(10,10,12, 0.58) 60%,
+      rgba(10,10,12, 0.82) 78%,
+      #0a0a0c 100%),
+    linear-gradient(to right,
+      rgba(10,10,12, 0.92) 0%,
+      rgba(10,10,12, 0.48) 32%,
+      transparent 55%,
+      rgba(10,10,12, 0.52) 100%);
 }
 
-/* Vignette effect */
-.hero-vignette {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse at 70% 30%, rgba(255,255,255,.06), transparent 30%),
-    radial-gradient(ellipse at 50% 50%, transparent 30%, rgba(0,0,0,.6) 100%);
+/* =================================================================
+   HERO — transparent content container over the backdrop
+   ================================================================= */
+
+.hero {
+  position: relative;
+  z-index: 1;
+  min-height: 82vh;
+  margin: 0 -48px 0;
+  padding: 140px 48px 60px;
+  display: flex;
+  align-items: flex-end;
+  animation: heroIn .55s var(--ease-out-expo) both;
+  /* transparent — backdrop shows through from page-backdrop layer */
 }
 
 /* Content wrapper */
@@ -962,8 +972,8 @@ main {
 .hero-poster {
   position: absolute;
   right: 7vw;
-  bottom: 80px;
-  z-index: 0;
+  bottom: 68px;
+  z-index: 1;
   width: min(20vw, 230px);
   min-width: 150px;
   aspect-ratio: 2/3;
@@ -984,23 +994,13 @@ main {
   display: block;
 }
 
-/* Bottom fade for hero — creates smooth blend into page content */
-.hero-bottom-fade {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 280px;
-  pointer-events: none;
-  background: linear-gradient(180deg, transparent 0%, rgba(10,10,12,.35) 40%, #0a0a0c 100%);
-}
-
 /* =================================================================
    HORIZONTAL SCROLL ROW
    ================================================================= */
 
 .row-section {
   position: relative;
+  z-index: 1;
   margin-top: 36px;
   animation: sectionIn .45s var(--ease-out-expo) both;
 }
@@ -1098,15 +1098,16 @@ main {
 
 /* =================================================================
    DETAIL PAGE
+   Transparent container — backdrop is handled by .page-backdrop
    ================================================================= */
 
 .detail-hero {
   position: relative;
-  min-height: 520px;
-  margin-top: 22px;
+  z-index: 1;
+  min-height: 480px;
+  margin-top: 0;
   border: none;
-  background: #08080a;
-  overflow: hidden;
+  background: transparent;
 }
 
 .cinematic-detail {
@@ -1114,32 +1115,6 @@ main {
   margin-right: -48px;
   border-left: 0;
   border-right: 0;
-}
-
-.detail-backdrop {
-  position: absolute;
-  inset: 0;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  transition: transform .6s var(--ease-out-expo);
-  -webkit-mask-image: linear-gradient(to bottom, #000 30%, #000 50%, transparent 82%);
-  mask-image: linear-gradient(to bottom, #000 30%, #000 50%, transparent 82%);
-  -webkit-mask-size: 100% 100%;
-  mask-size: 100% 100%;
-}
-
-.detail-hero:hover .detail-backdrop { transform: scale(1.06); }
-
-/* Backdrop overlays — matches hero gradient style */
-.detail-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background:
-    linear-gradient(to top, #0a0a0c 0%, rgba(10,10,12,.92) 35%, rgba(10,10,12,.45) 60%, transparent 100%),
-    linear-gradient(100deg, rgba(10,10,12,.88) 0%, rgba(10,10,12,.12) 55%, transparent 100%);
 }
 
 /* Content grid */
@@ -1151,7 +1126,7 @@ main {
   gap: 32px;
   align-items: end;
   min-height: 520px;
-  padding: 48px;
+  padding: 72px 48px 48px;
 }
 
 .detail-content,
@@ -2135,11 +2110,13 @@ mark {
     margin-top: 0;
   }
 
+  .page-backdrop { left: -16px; right: -16px; }
+
   /* Hero mobile */
   .hero {
     margin: 0 -16px 0;
-    padding: 64px 16px 40px;
-    min-height: 44vh;
+    padding: 96px 16px 40px;
+    min-height: 65vh;
   }
 
   .hero-poster { display: none; }
@@ -2169,7 +2146,7 @@ mark {
   .detail-content {
     grid-template-columns: 1fr;
     min-height: auto;
-    padding: 20px;
+    padding: 60px 20px 32px;
   }
 
   .detail-poster { max-width: 120px; }
@@ -2212,10 +2189,12 @@ mark {
 
   main { padding: 0 12px 48px; }
 
+  .page-backdrop { left: -12px; right: -12px; }
+
   .hero {
     margin: 0 -12px 0;
-    padding: 56px 12px 32px;
-    min-height: 40vh;
+    padding: 80px 12px 32px;
+    min-height: 58vh;
   }
 
   .hero-title { font-size: 26px; }
