@@ -294,6 +294,11 @@ def register_routes(app):
             return jsonify({"ok": False, "error": "没有可用的播放器"}), 400
         try:
             proc = subprocess.Popen([exe, media_path], shell=False)
+            # Small delay to verify the process started successfully
+            import time as _time
+            _time.sleep(0.3)
+            if proc.poll() is not None:
+                return jsonify({"ok": False, "error": "播放器启动失败"}), 500
             return jsonify({"ok": True, "player": Path(exe).stem})
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
