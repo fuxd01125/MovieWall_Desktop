@@ -87,6 +87,11 @@ function douban(item) { return item?.metadata?.douban || {}; }
 
 function artworkUrl(item, kind="poster") {
   if (!item) return "";
+  // Shows: TMDB poster takes priority over local file (which may be an episode screenshot)
+  if (item.type === "show") {
+    const t = tmdb(item);
+    if (kind === "poster" && t.poster_url) return t.poster_url;
+  }
   if (item[kind]) {
     if (String(item[kind]).startsWith("http")) return item[kind];
     return "/api/artwork/" + item.id + "/" + kind;
