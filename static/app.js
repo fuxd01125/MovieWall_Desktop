@@ -808,7 +808,7 @@ function renderSeasonDetail(show, season) {
   const sm = show._season_meta || {};
   const sMeta = sm[String(season.season_number)] || {};
   const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
-  const seasonRating = sMeta.rating || tmdbSeasonData.rating || t.vote_average || "";
+  const seasonRating = sMeta.rating || tmdbSeasonData.rating || "";
   const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
   const seasonSynopsis = sMeta.synopsis || tmdbSeasonData.overview || "";
   const origTitle = t.original_title && t.original_title !== titleOf(show) ? t.original_title : "";
@@ -833,7 +833,7 @@ function renderSeasonDetail(show, season) {
   if (sMeta.rating) metaParts.push('<span class="rating-badge douban">豆瓣 ' + Number(sMeta.rating).toFixed(1) + '</span>');
   if (tmdbSeasonData.rating) metaParts.push('<span class="rating-badge tmdb">TMDB ' + Number(tmdbSeasonData.rating).toFixed(1) + '</span>');
   if (sMeta.rating_count) metaParts.push('<span class="rating-badge douban-count">' + Number(sMeta.rating_count).toLocaleString() + ' 评</span>');
-  if (!sMeta.rating && !tmdbSeasonData.rating && seasonRating) metaParts.push(renderRatingBadge(seasonRating));
+  if (!sMeta.rating && !tmdbSeasonData.rating && seasonRating) metaParts.push('<span class="rating-badge sm">' + Number(seasonRating).toFixed(1) + '</span>');
   metaParts.push('<span class="year">' + (season.episode_count || 0) + ' 集</span>');
 
   const hist = getItemHistory(show);

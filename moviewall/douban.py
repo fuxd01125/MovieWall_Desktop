@@ -5,13 +5,22 @@ import http.cookiejar
 import json
 import random
 import re
+import ssl
 import threading
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 
 from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE, cache_lock
 from moviewall.log import log
+
+# Use certifi CA bundle for consistent SSL behavior in debug & EXE mode
+try:
+    import certifi
+    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    _SSL_CONTEXT = ssl.create_default_context()
 
 DOUBAN_SEARCH = "https://movie.douban.com/subject_search"
 DOUBAN_HOME = "https://movie.douban.com/"
@@ -43,9 +52,7 @@ def _douban_health():
     return False, "", 0
 
 def _set_douban_blocked(reason="blocked"):
-    """Mark Douban provider as blocked with cooldown.
-    Immediately updates in-memory cache so subsequent calls skip file reads.
-    """
+    """Mark Douban provider as blocked with cooldown."""
     now = time.time()
     reason_lower = reason.lower()
     if "403" in reason_lower or "blocked" in reason_lower:
@@ -70,9 +77,7 @@ def _set_douban_blocked(reason="blocked"):
     log.warning("Douban provider blocked (cooldown=%.1fh, reason=%s)", cooldown / 3600, reason)
 
 def _douban_available():
-    """Early-exit check: returns False if Douban provider is in cooldown.
-    Uses in-memory cache with 60s TTL to avoid repeated file reads.
-    """
+    """Early-exit check: returns False if Douban provider is in cooldown."""
     now = time.time()
     with _available_cache_lock:
         if _available_cache["available"] is not None and now - _available_cache["timestamp"] < _AVAILABLE_CACHE_TTL:
@@ -101,7 +106,11 @@ MOBILE_HEADERS = {
 
 def _get_opener():
     cj = http.cookiejar.CookieJar()
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    ctx = _SSL_CONTEXT
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=ctx),
+        urllib.request.HTTPCookieProcessor(cj),
+    )
     try:
         opener.open(urllib.request.Request(DOUBAN_HOME, headers=HEADERS), timeout=15)
     except Exception:
@@ -130,7 +139,6 @@ def _request(url, opener=None):
             _set_douban_blocked("HTTP 403")
         return None
     except Exception:
-        # Network/timeout error — softer cooldown
         _set_douban_blocked("network/timeout")
         return None
 
@@ -154,76 +162,6 @@ def _year_from_title(text):
     return m.group(1) if m else ""
 
 
-def _pick_best(items, year, season_number=None):
-    """Pick best matching item from douban search results.
-       When season_number is set, only returns items that explicitly 
-       mention that season — never falls back to the main show page.
-    """
-    valid = [i for i in items if i.get("tpl_name") in ("search_subject", None, "")]
-    if not valid:
-        return None
-    # 1) year match + season mention (if searching for a season)
-    for item in valid:
-        iy = item.get("year", "") or _year_from_title(item.get("title", ""))
-        if year and iy and str(year) in str(iy):
-            if season_number is None or _season_match_score(item.get("title", ""), season_number) > 0:
-                return item
-    # 2) if looking for a specific season, pick the best season-match item
-    if season_number is not None:
-        scored = [(item, _season_match_score(item.get("title", ""), season_number)) for item in valid]
-        scored.sort(key=lambda x: x[1], reverse=True)
-        if scored[0][1] >= 80:
-            return scored[0][0]
-        # No season-specific result → return None rather than wrong data
-        return None
-    # 3) (show-level search) prefer item with a rating
-    for item in valid:
-        if item.get("rating", {}).get("value"):
-            return item
-    return valid[0]
-
-
-def _search(title, year, season_number=None):
-    """Search douban, return best matching item dict or None.
-       TV category only — no all-categories fallback (avoids wrong results).
-    """
-    opener = _get_opener()
-    candidates = [title]
-    stripped = re.sub(r'[：:（(][^)）]*[)）]', '', title).strip()
-    if stripped and stripped != title:
-        candidates.append(stripped)
-
-    for t in candidates:
-        if not t:
-            continue
-        params = {"search_text": t, "cat": "1002"}
-        url = DOUBAN_SEARCH + "?" + urllib.parse.urlencode(params)
-        html = _request(url, opener)
-        if not html:
-            continue
-        items = _parse_items(html)
-        if not items:
-            continue
-        best = _pick_best(items, year, season_number)
-        if best:
-            return best
-    return None
-
-
-def _search_raw(title):
-    """Search douban and return ALL valid items (unfiltered). Used for season matching."""
-    opener = _get_opener()
-    params = {"search_text": title, "cat": "1002"}
-    url = DOUBAN_SEARCH + "?" + urllib.parse.urlencode(params)
-    html = _request(url, opener)
-    if not html:
-        return []
-    items = _parse_items(html)
-    if not items:
-        return []
-    return [i for i in items if i.get("tpl_name") in ("search_subject", None, "")]
-
-
 def _parse_rating(item):
     r = item.get("rating") or {}
     rating = r.get("value")
@@ -235,6 +173,168 @@ def _parse_rating(item):
         "abstract": item.get("abstract", ""),
         "abstract_2": item.get("abstract_2", ""),
     }
+
+
+# ── Media type helpers ──────────────────────────────────────────────
+
+def _get_item_type(item):
+    """Return 'tv', 'movie', or None for a Douban search result item."""
+    type_name = item.get("type_name") or item.get("type") or ""
+    if type_name:
+        t = type_name.lower().strip()
+        if t in ("tv", "movie", "teleplay"):
+            return "tv" if t == "teleplay" else t
+    types = item.get("types")
+    if isinstance(types, list) and len(types) > 0:
+        pass
+    return None
+
+
+def _cn_digits(n):
+    mapping = {1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "七", 8: "八", 9: "九"}
+    return mapping.get(n, str(n))
+
+
+# ── Season matching ──────────────────────────────────────────────────
+
+def _season_match_score(title, season_number):
+    """Score how well a Douban title matches a specific season number."""
+    if not title:
+        return 0
+    score = 0
+    cn = re.search(rf'第({season_number}|[{_cn_digits(season_number)}])季', str(title))
+    if cn:
+        score += 100
+    if re.search(rf'Season\s*{season_number}\b', str(title), re.I):
+        score += 100
+    if re.search(rf'\bS{season_number:02d}\b', str(title), re.I):
+        score += 80
+    if re.search(rf'\bS{season_number}\b', str(title), re.I):
+        score += 60
+    return score
+
+
+# ── Search functions ─────────────────────────────────────────────────
+
+def _pick_best(items, year, season_number=None, media_type=None):
+    """Pick best matching item from douban search results.
+
+    Rules:
+    - TV type items are never matched to movie items (if type_name is available)
+    - Season search requires explicit season mention in title (>0 score)
+    - Year is a bonus for show-level, not a hard requirement
+    - No fallback to show-level data for season searches
+    """
+    valid = [i for i in items if i.get("tpl_name") in ("search_subject", None, "")]
+    if not valid:
+        log.info("DOUBAN MATCH: no valid items (all filtered by tpl_name)")
+        return None
+
+    if media_type:
+        before = len(valid)
+        valid = [i for i in valid if _get_item_type(i) in (media_type, None)]
+        filtered = before - len(valid)
+        if filtered > 0:
+            log.info("DOUBAN MATCH: filtered %d items by type=%s, %d remain", filtered, media_type, len(valid))
+
+    if not valid:
+        log.info("DOUBAN MATCH: no valid items after type filter")
+        return None
+
+    if season_number is not None:
+        scored = [(item, _season_match_score(item.get("title", ""), season_number)) for item in valid]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        best_score = scored[0][1]
+        log.info("DOUBAN MATCH: season=%d best_score=%d candidates=%d",
+                 season_number, best_score, len(scored))
+        for s, item in scored[:5]:
+            log.info("  candidate: score=%3d title=%s id=%s year=%s",
+                     s, item.get("title", "?"), item.get("id", "?"),
+                     item.get("year", "") or _year_from_title(item.get("title", "")))
+
+        if best_score >= 80:
+            return scored[0][0]
+        log.info("DOUBAN MATCH: no season item with sufficient score (need >=80, got %d) → returning None", best_score)
+        return None
+
+    show_year = str(year) if year else ""
+    year_filtered = []
+    for item in valid:
+        iy = item.get("year", "") or _year_from_title(item.get("title", ""))
+        if show_year and iy and show_year in iy:
+            year_filtered.append(item)
+
+    if year_filtered:
+        for item in year_filtered:
+            if item.get("rating", {}).get("value"):
+                return item
+        return year_filtered[0]
+
+    for item in valid:
+        if item.get("rating", {}).get("value"):
+            return item
+    return valid[0]
+
+
+def _search(title, year, season_number=None, media_type=None):
+    """Search douban, return best matching item dict or None.
+    Uses correct category: 1001=movie, 1002=tv.
+    """
+    opener = _get_opener()
+    candidates = [title]
+    stripped = re.sub(r'[：:（(][^)）]*[)）]', '', title).strip()
+    if stripped and stripped != title:
+        candidates.append(stripped)
+
+    cat = "1001" if media_type == "movie" else "1002"
+
+    for t in candidates:
+        if not t:
+            continue
+        params = {"search_text": t, "cat": cat}
+        url = DOUBAN_SEARCH + "?" + urllib.parse.urlencode(params)
+
+        log.info("DOUBAN SEARCH: query=%s cat=%s season=%s type=%s",
+                 t, cat, season_number, media_type)
+
+        html = _request(url, opener)
+        if not html:
+            log.info("DOUBAN SEARCH: no response for query=%s", t)
+            continue
+        items = _parse_items(html)
+        log.info("DOUBAN SEARCH: query=%s returned %d items", t, len(items))
+
+        if not items:
+            continue
+        best = _pick_best(items, year, season_number, media_type)
+        if best:
+            log.info("DOUBAN MATCH: FINAL id=%s title=%s season=%s",
+                     best.get("id", "?"), best.get("title", "?"), season_number)
+            return best
+    return None
+
+
+def _search_raw(title):
+    """Search douban and return ALL valid items (unfiltered). Used for season matching."""
+    opener = _get_opener()
+    params = {"search_text": title, "cat": "1002"}
+    url = DOUBAN_SEARCH + "?" + urllib.parse.urlencode(params)
+
+    log.info("DOUBAN RAW SEARCH: query=%s", title)
+
+    html = _request(url, opener)
+    if not html:
+        return []
+    items = _parse_items(html)
+
+    log.info("DOUBAN RAW SEARCH: query=%s returned %d items", title, len(items))
+    for item in items[:8]:
+        log.info("  raw item: id=%s title=%s",
+                 item.get("id", "?"), item.get("title", "?"))
+
+    if not items:
+        return []
+    return [i for i in items if i.get("tpl_name") in ("search_subject", None, "")]
 
 
 # ── Thread-safe cache operations ─────────────────────────────────
@@ -253,10 +353,10 @@ def _cache_set(key, value):
 
 # ── Public API ──────────────────────────────────────────────────────
 
-def fetch_douban_meta(title, year):
+def fetch_douban_meta(title, year, media_type="tv"):
+    """Fetch Douban rating + abstract for a movie/show. Returns dict or None."""
     if not _douban_available():
         return None
-    """Fetch Douban rating + abstract for a movie/show. Returns dict or None."""
     cfg = load_config()
     ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
     key = f"douban:{urllib.parse.quote(title)}:{year or ''}"
@@ -264,7 +364,7 @@ def fetch_douban_meta(title, year):
     if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < ttl:
         result = cached["data"]
     else:
-        item = _search(title, year)
+        item = _search(title, year, media_type=media_type)
         result = _parse_rating(item) if item else None
         _cache_set(key, {"_cached_at": time.time(), "data": result})
 
@@ -312,10 +412,8 @@ def _fetch_mobile_detail(douban_id):
     url = DOUBAN_MOBILE.format(douban_id)
     result = {}
     try:
-        with urllib.request.urlopen(
-            urllib.request.Request(url, headers=dict(MOBILE_HEADERS, Referer="https://m.douban.com/")),
-            timeout=15,
-        ) as resp:
+        req = urllib.request.Request(url, headers=dict(MOBILE_HEADERS, Referer="https://m.douban.com/"))
+        with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
             html = resp.read().decode("utf-8", errors="replace")
 
             m = re.search(r'<meta\s+property="og:image"[^>]*content="([^"]*)"', html)
@@ -359,79 +457,67 @@ def _fetch_mobile_detail(douban_id):
     return result
 
 
-def _season_match_score(title, season_number):
-    """Score how well a Douban title matches a specific season number."""
-    if not title:
-        return 0
-    score = 0
-    cn = re.search(rf'第({season_number}|[{_cn_digits(season_number)}])季', str(title))
-    if cn:
-        score += 100
-    if re.search(rf'Season\s*{season_number}\b', str(title), re.I):
-        score += 100
-    if re.search(rf'\bS{season_number:02d}\b', str(title), re.I):
-        score += 80
-    if re.search(rf'\bS{season_number}\b', str(title), re.I):
-        score += 60
-    return score
+def _build_season_queries(show_title, season_number, original_title=""):
+    """Build multiple search query candidates for a specific season."""
+    cn = _cn_digits(season_number)
+    queries = []
+
+    queries.append(f"{show_title} 第{cn}季")
+    queries.append(f"{show_title} 第{season_number}季")
+    queries.append(f"{show_title} Season {season_number}")
+    queries.append(f"{show_title} S{season_number:02d}")
+    if original_title and original_title != show_title:
+        queries.append(f"{original_title} 第{cn}季")
+        queries.append(f"{original_title} Season {season_number}")
+    queries.append(show_title)
+
+    seen = set()
+    unique = []
+    for q in queries:
+        if q not in seen:
+            seen.add(q)
+            unique.append(q)
+    return unique
 
 
-def _cn_digits(n):
-    mapping = {1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "七", 8: "八", 9: "九"}
-    return mapping.get(n, str(n))
-
-
-def fetch_douban_by_season(show_title, show_year, season_number, original_title="", fallback_douban_id=None):
+def fetch_douban_by_season(show_title, show_year, season_number, original_title=""):
     """Search Douban for a specific season of a show.
-       Strategy:
-       1. Exact season title search (e.g. "汉尼拔 第二季")
-       2. Show title broad search — find season in ALL results
-       3. If no season-specific page found, use show-level douban_id as fallback
+
+    CRITICAL: Never returns show-level data for season searches.
+    Returns None if no season-specific page is found.
     """
     if not _douban_available():
         return None
-    cn = _cn_digits(season_number)
+
+    queries = _build_season_queries(show_title, season_number, original_title)
+
+    log.info("DOUBAN SEASON: show=%s season=%d queries=%s",
+             show_title, season_number, queries)
+
     best_item = None
     best_score = -1
 
-    # Step 1: exact season title
-    for kw in (f"{show_title} 第{cn}季",):
-        item = _search(kw, show_year, season_number)
+    for query in queries:
+        is_exact = "第" in query or "Season" in query or "S{:02d}".format(season_number) in query
+        item = _search(query, show_year, season_number, media_type="tv")
         if item:
             score = _season_match_score(item.get("title", ""), season_number)
-            if score >= 100:
-                best_item, best_score = item, score
-
-    # Step 2: broad show-title search, scan ALL results for season match
-    if not best_item:
-        search_titles = [show_title]
-        if original_title and original_title != show_title:
-            search_titles.append(original_title)
-        for st in search_titles:
-            all_items = _search_raw(st)
-            for item in all_items:
-                score = _season_match_score(item.get("title", ""), season_number)
-                if score > best_score:
-                    best_score = score
-                    best_item = item
-            if best_score >= 80:
+            log.info("DOUBAN SEASON: query=%s → score=%d item=%s",
+                     query, score, item.get("title", "?"))
+            if score > best_score:
+                best_score = score
+                best_item = item
+            if score >= 100 and is_exact:
                 break
 
-    # Step 3: fallback to show-level douban_id if no season page found
-    if (not best_item or best_score <= 0) and fallback_douban_id:
-        result = {"douban_id": fallback_douban_id, "rating": None, "star_count": None, "rating_count": None, "abstract": "", "abstract_2": ""}
-        detail = _fetch_mobile_detail(fallback_douban_id) or {}
-        for field in ("synopsis", "poster_url", "air_date", "cast_info"):
-            if detail.get(field):
-                result[field] = detail[field]
-        if not result.get("synopsis"):
-            syn = _fetch_synopsis(fallback_douban_id)
-            if syn:
-                result["synopsis"] = syn
-        return result
-
-    if not best_item or best_score <= 0:
+    if not best_item or best_score < 80:
+        log.info("DOUBAN SEASON: show=%s season=%d — no season-specific page found (best_score=%d). Returning None.",
+                 show_title, season_number, best_score)
         return None
+
+    log.info("DOUBAN SEASON: FINAL MATCH show=%s season=%s → id=%s title=%s score=%d",
+             show_title, season_number,
+             best_item.get("id", "?"), best_item.get("title", "?"), best_score)
 
     result = _parse_rating(best_item)
     if result and result.get("douban_id"):
@@ -465,10 +551,8 @@ def _fetch_synopsis(douban_id):
     url = DOUBAN_MOBILE.format(douban_id)
     synopsis = None
     try:
-        with urllib.request.urlopen(
-            urllib.request.Request(url, headers=dict(MOBILE_HEADERS, Referer="https://m.douban.com/")),
-            timeout=15,
-        ) as resp:
+        req = urllib.request.Request(url, headers=dict(MOBILE_HEADERS, Referer="https://m.douban.com/"))
+        with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
             html = resp.read().decode("utf-8", errors="replace")
             m = re.search(r'<section[^>]*class="subject-intro"[^>]*>(.*?)</section>', html, re.DOTALL)
             if m:

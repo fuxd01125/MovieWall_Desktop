@@ -13,9 +13,10 @@ def setup_log(name="moviewall", level="INFO"):
         return logger
     logger.setLevel(_LOG_LEVELS.get(level, logging.INFO))
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    sh = logging.StreamHandler(sys.stdout)
-    sh.setFormatter(fmt)
-    logger.addHandler(sh)
+    if sys.stdout is not None:
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setFormatter(fmt)
+        logger.addHandler(sh)
     try:
         fh = logging.FileHandler(str(APP_DIR / "moviewall.log"), encoding="utf-8")
         fh.setFormatter(fmt)

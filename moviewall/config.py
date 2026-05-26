@@ -61,6 +61,63 @@ def load_players():
     return []
 
 
+def get_potplayer_dpl_path():
+    """Return the PotPlayer dpl (playlist) file path from config, or None.
+
+    Priority:
+      1. ``potplayer_dpl_path`` from config.json (explicit user setting)
+      2. Derived from the first player's exe path (``{exe_dir}/Playlist/{exe_stem}.dpl``)
+    """
+    cfg = load_config()
+    explicit = cfg.get("potplayer_dpl_path")
+    if explicit and Path(explicit).exists():
+        return str(Path(explicit).resolve())
+    # Fallback: derive from player exe path
+    players = load_players()
+    if not players:
+        return None
+    exe = players[0].get("path", "")
+    if not exe or not Path(exe).exists():
+        return None
+    exe_path = Path(exe).resolve()
+    derived = exe_path.parent / "Playlist" / f"{exe_path.stem}.dpl"
+    if derived.exists():
+        return str(derived.resolve())
+    return str(derived)
+
+
+def get_potplayer_ini_path():
+    """Return the PotPlayer config ini path, or None.
+
+    Priority:
+      1. ``potplayer_ini_path`` from config.json (future use)
+      2. ``{exe_dir}/{exe_stem}.ini`` (portable mode)
+      3. ``%%APPDATA%%/PotPlayer/{exe_stem}.ini`` (installed mode)
+
+    Currently reserved for future progress tracking (``[RememberPlaybackPos]``).
+    """
+    cfg = load_config()
+    explicit = cfg.get("potplayer_ini_path")
+    if explicit and Path(explicit).exists():
+        return str(Path(explicit).resolve())
+    players = load_players()
+    if not players:
+        return None
+    exe = players[0].get("path", "")
+    if not exe or not Path(exe).exists():
+        return None
+    exe_path = Path(exe).resolve()
+    exe_stem = exe_path.stem
+    local = exe_path.parent / f"{exe_stem}.ini"
+    if local.exists():
+        return str(local.resolve())
+    import os
+    appdata = Path(os.environ.get("APPDATA", "")) / "PotPlayer" / f"{exe_stem}.ini"
+    if appdata.exists():
+        return str(appdata.resolve())
+    return None
+
+
 def normalize_categories():
     cfg = load_config()
     raw = cfg.get("categories", {"Movies": "电影", "TV Shows": "剧集", "Anime": "动漫"})

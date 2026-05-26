@@ -381,12 +381,13 @@ def attach_all_metadata(item, force_refresh=False):
         else:
             title_cn = tmdb_data.get("title", "") if tmdb_data else (item.get("display_title") or query_title)
             title_en = tmdb_data.get("original_title", "") if tmdb_data else ""
-            douban_data = fetch_douban_meta(title_cn or title_en or query_title, query_year)
+            douban_data = fetch_douban_meta(title_cn or title_en or query_title, query_year, media_type=media_type)
 
         if douban_data:
             save_douban_meta(media_id, douban_data)
             meta["douban"] = dict(douban_data)
-            if douban_data.get("synopsis") and tmdb_data:
+            # Only use show-level Douban synopsis if TMDB has no overview at all
+            if douban_data.get("synopsis") and tmdb_data and not tmdb_data.get("overview", "").strip():
                 overview_override = dict(tmdb_data)
                 overview_override["overview"] = douban_data["synopsis"]
                 save_tmdb_meta(media_id, {**overview_override, "_season_data": season_data})
@@ -398,13 +399,12 @@ def attach_all_metadata(item, force_refresh=False):
         from moviewall.douban import fetch_douban_by_season
         show_title = tmdb_data.get("title", "") if tmdb_data else query_title
         orig_title_show = tmdb_data.get("original_title", "") if tmdb_data else ""
-        douban_found_id = (meta.get("douban") or {}).get("douban_id")
         season_meta_db = {}
         for season in local_seasons:
             sn = season.get("season_number")
             if not sn:
                 continue
-            sdata = fetch_douban_by_season(show_title, query_year, sn, orig_title_show, douban_found_id)
+            sdata = fetch_douban_by_season(show_title, query_year, sn, orig_title_show)
             if sdata:
                 save_douban_season_meta(season["id"], media_id, sn, sdata)
                 season_meta_db[str(sn)] = sdata

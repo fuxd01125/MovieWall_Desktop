@@ -71,6 +71,13 @@ def main():
         add_data.append(f"static{_SEP}static")
         add_data.append(f"MovieWall.ico{_SEP}.")
 
+        hidden_imports = [
+            "webview.platforms.edgechromium",
+            "certifi", "idna",
+            "charset_normalizer",
+            "urllib.parse", "urllib.request", "urllib.error",
+            "http.cookiejar",
+        ]
         cmd = [
             sys.executable, "-m", "PyInstaller",
             "--noconfirm", "--clean",
@@ -79,8 +86,10 @@ def main():
             "--name", "MovieWall",
             "--icon", str(ROOT / "MovieWall.ico"),
             "--collect-all", "webview",
-            "--hidden-import", "webview.platforms.edgechromium",
         ]
+        for hi in hidden_imports:
+            cmd.extend(["--hidden-import", hi])
+        cmd.extend(["--collect-data", "certifi"])
         for ad in add_data:
             cmd.extend(["--add-data", ad])
         cmd.append(str(ROOT / "desktop_app.py"))

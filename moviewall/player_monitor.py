@@ -23,7 +23,6 @@ Architecture
 - Similarly for ``.ini`` — progress is extracted from ``[RememberPlaybackPos]``.
 - The monitor runs in a daemon thread; it never blocks the main thread.
 """
-import os
 import re
 import threading
 import time
@@ -65,38 +64,20 @@ _lock = threading.Lock()
 #  Path resolution
 # ═══════════════════════════════════════════════════════════════════════
 
-def _get_potplayer_paths():
-    """Resolve PotPlayer exe, dpl and ini paths from config.
+def _get_potplayer_dpl_path():
+    """Return the dpl file path from config (primary) or derived from player exe.
 
-    Returns a dict with keys ``exe``, ``dpl``, ``ini``, or ``None``
-    if no valid PotPlayer path is configured.
+    Reads ``potplayer_dpl_path`` from ``config.json`` first.
+    Falls back to ``{exe_dir}/Playlist/{exe_stem}.dpl`` for backward compat.
+
+    Returns ``None`` if neither source yields a valid path.
     """
-    from moviewall.config import load_players
+    from moviewall.config import get_potplayer_dpl_path as _cfg_dpl
 
-    players = load_players()
-    if not players:
-        return None
-
-    exe = players[0].get("path", "")
-    if not exe or not Path(exe).exists():
-        return None
-
-    exe_path = Path(exe).resolve()
-    exe_dir = exe_path.parent
-    exe_stem = exe_path.stem
-
-    dpl = exe_dir / "Playlist" / f"{exe_stem}.dpl"
-
-    # INI can be in the same directory (portable) or AppData (installed)
-    ini = exe_dir / f"{exe_stem}.ini"
-    if not ini.exists():
-        ini_appdata = (
-            Path(os.environ.get("APPDATA", "")) / "PotPlayer" / f"{exe_stem}.ini"
-        )
-        if ini_appdata.exists():
-            ini = ini_appdata
-
-    return {"exe": str(exe_path), "dpl": str(dpl), "ini": str(ini)}
+    path = _cfg_dpl()
+    if path and Path(path).exists():
+        return path
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -368,17 +349,17 @@ def start_monitor(paths=None):
         return True
 
     if paths is None:
-        paths = _get_potplayer_paths()
-    if not paths:
-        log.warning("PLAYER MONITOR: no PotPlayer path configured")
-        return False
+        dpl_path = _get_potplayer_dpl_path()
+    elif isinstance(paths, dict):
+        dpl_path = paths.get("dpl", "")
+    else:
+        dpl_path = paths
 
-    dpl_path = paths.get("dpl", "")
     if not dpl_path or not Path(dpl_path).parent.exists():
-        log.warning("PLAYER MONITOR: dpl directory not found: %s", dpl_path)
+        log.warning("PLAYER MONITOR: dpl not found: %s", dpl_path)
         return False
 
-    log.info("PLAYER MONITOR: starting — dpl=%s ini=%s", dpl_path, paths.get("ini", ""))
+    log.info("PLAYER MONITOR: starting — dpl=%s", dpl_path)
 
     if _HAVE_WATCHDOG:
         watch_dir = str(Path(dpl_path).parent)
@@ -430,10 +411,10 @@ def get_current_playing():
 
     Returns ``None`` if PotPlayer is not playing or the dpl is unreadable.
     """
-    paths = _get_potplayer_paths()
-    if not paths:
+    dpl_path = _get_potplayer_dpl_path()
+    if not dpl_path:
         return None
-    playname, playtime_ms = _read_dpl(paths["dpl"])
+    playname, _ = _read_dpl(dpl_path)
     return playname
 
 
