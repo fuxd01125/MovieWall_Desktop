@@ -713,11 +713,15 @@ def load_all_history():
     # Sort in Python to handle mixed TEXT/REAL played_at correctly
     row_dicts = [dict(r) for r in rows]
     row_dicts.sort(key=lambda r: _normalize_played_at(r.get("played_at")), reverse=True)
+    # Per-media dedup: keep latest entry per media_id
     result = {}
     for d in row_dicts:
-        mid = d.pop("media_id")
-        if mid not in result:
-            result[mid] = d
+        mid = d.get("media_id")
+        if mid and mid not in result:
+            entry = dict(d)
+            result[mid] = entry
+    # Also return all entries sorted by played_at for future use
+    # (frontend uses result[media_id] for continue-watching lookup)
     return result
 
 
@@ -725,14 +729,16 @@ def save_history(entry):
     conn = get_conn()
     try:
         mid = entry.get("media_id")
+        eid = entry.get("episode_id")
         now = entry.get("played_at") or time.time()
-        # Delete old entry for this media_id so only the latest survives
-        conn.execute("DELETE FROM history WHERE media_id=?", (mid,))
+        # Only delete old entry for this specific episode (not all episodes in show)
+        # This allows per-episode progress tracking
+        conn.execute("DELETE FROM history WHERE episode_id=?", (eid,))
         conn.execute("""
             INSERT INTO history (media_id,episode_id,path,title,show_title,season_number,episode_number,label,short_label,played_at)
             VALUES (?,?,?,?,?,?,?,?,?,?)
         """, (
-            mid, entry.get("episode_id"), entry.get("path"),
+            mid, eid, entry.get("path"),
             entry.get("title"), entry.get("show_title"),
             entry.get("season_number"), entry.get("episode_number"),
             entry.get("label"), entry.get("short_label"),
@@ -741,7 +747,7 @@ def save_history(entry):
         conn.commit()
         log.info(
             "HISTORY SAVE: media_id=%s episode_id=%s label=%s played_at=%s",
-            mid, entry.get("episode_id"), entry.get("label"), now,
+            mid, eid, entry.get("label"), now,
         )
     except Exception:
         conn.rollback()
@@ -751,21 +757,21 @@ def save_history(entry):
 
 
 def update_history_progress(media_id, episode_id, progress_seconds, duration_seconds=0, path=""):
-    """Update playback progress on the history row for this media_id.
-
-    Only one row per media_id exists (``save_history`` deletes old rows).
+    """Update playback progress on the history row for this episode.
+    Each episode has its own history row for per-episode progress tracking.
     """
     conn = get_conn()
     try:
         watched_pct = (progress_seconds / duration_seconds * 100) if duration_seconds > 0 else 0
+        # Update by episode_id since each episode now has its own row
         conn.execute("""
             UPDATE history SET progress_seconds=?, duration_seconds=?, watched_pct=?
-            WHERE media_id=?
-        """, (progress_seconds, duration_seconds, watched_pct, media_id))
+            WHERE episode_id=?
+        """, (progress_seconds, duration_seconds, watched_pct, episode_id))
         conn.commit()
         log.debug(
-            "HISTORY PROGRESS: media_id=%s progress=%.0fs/%.0fs (%.0f%%)",
-            media_id, progress_seconds, duration_seconds, watched_pct,
+            "HISTORY PROGRESS: episode_id=%s progress=%.0fs/%.0fs (%.0f%%)",
+            episode_id, progress_seconds, duration_seconds, watched_pct,
         )
     except Exception:
         conn.rollback()
