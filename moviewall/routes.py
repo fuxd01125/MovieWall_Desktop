@@ -263,7 +263,7 @@ def register_routes(app):
         if not exe or not Path(exe).exists():
             return jsonify({"ok": False, "error": "没有可用的播放器"}), 400
         try:
-            subprocess.Popen([exe, media_path], shell=False)
+            proc = subprocess.Popen([exe, media_path], shell=False)
             return jsonify({"ok": True, "player": Path(exe).stem})
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
@@ -271,6 +271,22 @@ def register_routes(app):
     @app.route("/api/players")
     def api_players():
         return jsonify(load_players())
+
+    @app.route("/api/playback/current", methods=["GET"])
+    def api_playback_current():
+        """Return the current playing file path from PotPlayer's dpl file.
+
+        This is used by the frontend to detect what PotPlayer is playing
+        right now without polling.
+        """
+        try:
+            from moviewall.player_monitor import get_current_playing, is_running
+            return jsonify({
+                "path": get_current_playing(),
+                "monitor_active": is_running(),
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/open_folder", methods=["POST"])
     def api_open_folder():
@@ -329,7 +345,14 @@ def register_routes(app):
         media_id = data.get("media_id")
         if not media_id:
             return jsonify({"ok": False, "error": "缺少 media_id"}), 400
-        entry = {**data, "played_at": data.get("played_at") or time.time()}
+        raw_ts = data.get("played_at")
+        # Normalise: frontend used to send ISO strings which break SQLite sorting
+        if isinstance(raw_ts, str):
+            try:
+                raw_ts = time.mktime(time.strptime(raw_ts[:19], "%Y-%m-%dT%H:%M:%S"))
+            except (ValueError, OverflowError):
+                raw_ts = time.time()
+        entry = {**data, "played_at": raw_ts or time.time()}
         save_history(entry)
         return jsonify({"ok": True})
 

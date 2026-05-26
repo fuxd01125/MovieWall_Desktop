@@ -4,6 +4,7 @@ import sqlite3
 import time
 
 from moviewall.config import APP_DIR
+from moviewall.log import log
 
 DB_PATH = APP_DIR / "library.db"
 
@@ -106,19 +107,22 @@ CREATE TABLE IF NOT EXISTS ratings (
     rated_at  REAL
 );
 
-CREATE TABLE IF NOT EXISTS history (
-    media_id        TEXT,
-    episode_id      TEXT,
-    path            TEXT,
-    title           TEXT,
-    show_title      TEXT,
-    season_number   INTEGER,
-    episode_number  INTEGER,
-    label           TEXT,
-    short_label     TEXT,
-    played_at       REAL,
-    PRIMARY KEY (media_id, played_at)
-);
+    CREATE TABLE IF NOT EXISTS history (
+        media_id        TEXT,
+        episode_id      TEXT,
+        path            TEXT,
+        title           TEXT,
+        show_title      TEXT,
+        season_number   INTEGER,
+        episode_number  INTEGER,
+        label           TEXT,
+        short_label     TEXT,
+        played_at       REAL,
+        progress_seconds REAL DEFAULT 0,
+        duration_seconds REAL DEFAULT 0,
+        watched_pct     REAL DEFAULT 0,
+        PRIMARY KEY (media_id, played_at)
+    );
 
 CREATE TABLE IF NOT EXISTS favorites (
     media_id     TEXT PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
@@ -160,6 +164,25 @@ def init_db():
                 conn.execute(f"ALTER TABLE metadata_douban_seasons ADD COLUMN {col} TEXT")
             except sqlite3.OperationalError:
                 pass  # column already exists
+        for col in ("progress_seconds", "duration_seconds", "watched_pct"):
+            try:
+                conn.execute(f"ALTER TABLE history ADD COLUMN {col} REAL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+        # Fix: ensure only one row per media_id (latest played_at), delete old TEXT entries
+        try:
+            # 1. Delete rows where played_at is TEXT (ISO strings from old frontend bug)
+            conn.execute("DELETE FROM history WHERE typeof(played_at) = 'text'")
+            # 2. Deduplicate: keep only the latest row per media_id
+            conn.execute("""
+                DELETE FROM history WHERE rowid NOT IN (
+                    SELECT MIN(rowid) FROM history
+                    GROUP BY media_id
+                )
+            """)
+            conn.commit()
+        except sqlite3.OperationalError:
+            conn.rollback()
         conn.commit()
     except Exception:
         conn.rollback()
@@ -583,17 +606,40 @@ def delete_rating(media_id):
         conn.close()
 
 
+def _normalize_played_at(val):
+    """Convert played_at to a float (Unix seconds), regardless of storage type."""
+    if val is None:
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        # ISO string from old frontend bug
+        try:
+            return time.mktime(time.strptime(val[:19], "%Y-%m-%dT%H:%M:%S"))
+        except (ValueError, OverflowError):
+            pass
+        # Numeric string
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            pass
+    log.warning("HISTORY: unparseable played_at %r (%s)", val, type(val).__name__)
+    return 0.0
+
+
 def load_all_history():
     conn = get_conn()
     try:
-        rows = conn.execute("SELECT * FROM history ORDER BY played_at DESC").fetchall()
+        rows = conn.execute("SELECT * FROM history").fetchall()
     except Exception:
         raise
     finally:
         conn.close()
+    # Sort in Python to handle mixed TEXT/REAL played_at correctly
+    row_dicts = [dict(r) for r in rows]
+    row_dicts.sort(key=lambda r: _normalize_played_at(r.get("played_at")), reverse=True)
     result = {}
-    for r in rows:
-        d = dict(r)
+    for d in row_dicts:
         mid = d.pop("media_id")
         if mid not in result:
             result[mid] = d
@@ -603,17 +649,49 @@ def load_all_history():
 def save_history(entry):
     conn = get_conn()
     try:
+        mid = entry.get("media_id")
+        now = entry.get("played_at") or time.time()
+        # Delete old entry for this media_id so only the latest survives
+        conn.execute("DELETE FROM history WHERE media_id=?", (mid,))
         conn.execute("""
-            INSERT OR REPLACE INTO history (media_id,episode_id,path,title,show_title,season_number,episode_number,label,short_label,played_at)
+            INSERT INTO history (media_id,episode_id,path,title,show_title,season_number,episode_number,label,short_label,played_at)
             VALUES (?,?,?,?,?,?,?,?,?,?)
         """, (
-            entry.get("media_id"), entry.get("episode_id"), entry.get("path"),
+            mid, entry.get("episode_id"), entry.get("path"),
             entry.get("title"), entry.get("show_title"),
             entry.get("season_number"), entry.get("episode_number"),
             entry.get("label"), entry.get("short_label"),
-            entry.get("played_at") or time.time(),
+            now,
         ))
         conn.commit()
+        log.info(
+            "HISTORY SAVE: media_id=%s episode_id=%s label=%s played_at=%s",
+            mid, entry.get("episode_id"), entry.get("label"), now,
+        )
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def update_history_progress(media_id, episode_id, progress_seconds, duration_seconds=0, path=""):
+    """Update playback progress on the history row for this media_id.
+
+    Only one row per media_id exists (``save_history`` deletes old rows).
+    """
+    conn = get_conn()
+    try:
+        watched_pct = (progress_seconds / duration_seconds * 100) if duration_seconds > 0 else 0
+        conn.execute("""
+            UPDATE history SET progress_seconds=?, duration_seconds=?, watched_pct=?
+            WHERE media_id=?
+        """, (progress_seconds, duration_seconds, watched_pct, media_id))
+        conn.commit()
+        log.debug(
+            "HISTORY PROGRESS: media_id=%s progress=%.0fs/%.0fs (%.0f%%)",
+            media_id, progress_seconds, duration_seconds, watched_pct,
+        )
     except Exception:
         conn.rollback()
         raise

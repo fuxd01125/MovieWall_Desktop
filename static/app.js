@@ -18,6 +18,7 @@ const breadcrumb = document.querySelector("#breadcrumb");
 let ratingsCache = {};
 let historyCache = {};
 let favoritesCache = [];
+let historyPollInterval = null;
 
 function loadHistory() { return historyCache; }
 function loadRatings() { return ratingsCache; }
@@ -51,10 +52,69 @@ function toggleFavorite(itemId) {
 }
 
 function recordPlay(entry) {
-  const item = {...entry, played_at: new Date().toISOString()};
+  // IMPORTANT: must use Unix seconds (same as backend time.time()) not ISO string.
+  // SQLite ORDER BY sorts numbers vs text differently — using ISO string would
+  // cause load_all_history() to always return this entry instead of the monitor's.
+  const item = {...entry, played_at: Date.now() / 1000};
   historyCache[item.media_id] = item;
   historyCache.__last = item;
   apiPutHistory(item);
+}
+
+/* ===== Real-time History Sync (polls backend during playback) ===== */
+
+function _normalizeTime(t) {
+  // Backend stores played_at as Unix timestamp (seconds as float),
+  // frontend recordPlay() stores it as ISO string.
+  // Normalise both to milliseconds for comparison.
+  if (t == null) return 0;
+  if (typeof t === 'number') return t * 1000;
+  if (typeof t === 'string' && /^\d+(\.\d+)?$/.test(t)) {
+    return parseFloat(t) * 1000;
+  }
+  const ms = new Date(t).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+async function _pollHistory() {
+  try {
+    const res = await fetch("/api/history");
+    const fresh = await res.json();
+    let changed = false;
+    for (const mediaId of Object.keys(fresh)) {
+      const entry = fresh[mediaId];
+      const old = historyCache[mediaId];
+      const oldTime = old ? _normalizeTime(old.played_at) : 0;
+      const newTime = _normalizeTime(entry.played_at);
+      if (!old || old.episode_id !== entry.episode_id || newTime > oldTime) {
+        historyCache[mediaId] = entry;
+        changed = true;
+      }
+    }
+    // Recompute __last as the entry with the largest played_at
+    let latest = null;
+    let latestTime = 0;
+    for (const mediaId of Object.keys(historyCache)) {
+      if (mediaId === '__last') continue;
+      const e = historyCache[mediaId];
+      const t = _normalizeTime(e.played_at);
+      if (t > latestTime) { latestTime = t; latest = e; }
+    }
+    if (latest) historyCache.__last = latest;
+    if (changed) renderRoute(currentView);
+  } catch (e) { /* ignore poll errors */ }
+}
+
+function startHistoryPolling() {
+  if (historyPollInterval) return;
+  historyPollInterval = setInterval(_pollHistory, 3000);
+}
+
+function stopHistoryPolling() {
+  if (historyPollInterval) {
+    clearInterval(historyPollInterval);
+    historyPollInterval = null;
+  }
 }
 
 function getLastHistory() { return historyCache.__last || null; }
@@ -468,10 +528,19 @@ async function playMedia(path, entry, player) {
   const route = {...currentView};
   const body = {path};
   if (player) body.player = player;
+  // Send episode context so backend can monitor PotPlayer and sync actual last played file
+  if (entry) {
+    body.media_id = entry.media_id;
+    body.episode_id = entry.episode_id;
+    body.season_id = entry.season_id;
+    body.season_number = entry.season_number;
+    body.episode_number = entry.episode_number;
+    body.show_title = entry.show_title;
+  }
   const res = await fetch("/api/play", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
   const data = await res.json().catch(() => ({}));
   if (!data.ok) return alert(data.error || "播放失败");
-  if (entry) { recordPlay(entry); renderRoute(route); }
+  if (entry) { recordPlay(entry); startHistoryPolling(); renderRoute(route); }
 }
 
 function playSavedHistory() {
@@ -824,7 +893,7 @@ function renderSeasonDoubanTags(show, season) {
 /* ===== Episode Entry ===== */
 
 function episodeEntry(show, season, ep, label) {
-  return "{media_id:'" + show.id + "',episode_id:'" + ep.id + "',type:'episode',path:'" + escapeJs(ep.path) + "',title:'" + escapeJs(ep.title) + "',show_title:'" + escapeJs(titleOf(show)) + "',season_number:" + season.season_number + ",episode_number:" + (ep.episode_number || 0) + ",label:'" + escapeJs(label) + "',short_label:'S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0") + "'}";
+  return "{media_id:'" + show.id + "',episode_id:'" + ep.id + "',season_id:'" + season.id + "',type:'episode',path:'" + escapeJs(ep.path) + "',title:'" + escapeJs(ep.title) + "',show_title:'" + escapeJs(titleOf(show)) + "',season_number:" + season.season_number + ",episode_number:" + (ep.episode_number || 0) + ",label:'" + escapeJs(label) + "',short_label:'S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0") + "'}";
 }
 
 /* ===== Episode Card (compact row) ===== */
@@ -865,7 +934,7 @@ function playFirstEpisode(showId, seasonNumber) {
   const ep = season?.episodes?.[0];
   if (!show || !season || !ep) return;
   const label = season.title + " · " + ep.title;
-  playMedia(ep.path, {media_id:show.id, episode_id:ep.id, type:"episode", path:ep.path, title:ep.title, show_title:titleOf(show), season_number:season.season_number, episode_number:ep.episode_number || 0, label, short_label:"S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0")});
+  playMedia(ep.path, {media_id:show.id, episode_id:ep.id, season_id:season.id, type:"episode", path:ep.path, title:ep.title, show_title:titleOf(show), season_number:season.season_number, episode_number:ep.episode_number || 0, label, short_label:"S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0")});
 }
 
 /* ===== Settings ===== */
@@ -924,6 +993,7 @@ async function clearDoubanId(itemId) {
 }
 
 function renderSettings() {
+  stopHistoryPolling();
   navStack = [];
   renderCategoryTabs();
   renderBreadcrumb();
