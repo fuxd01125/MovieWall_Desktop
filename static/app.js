@@ -736,6 +736,7 @@ function detailHero(item, bodyHtml) {
   const bg = backdropUrl(item);
   const poster = tmdb(item).poster_url || artworkUrl(item, "poster") || artworkUrl(item, "thumb");
   return '<section class="detail-hero">'
+    + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回">←</button>'
     + (bg ? '<div class="detail-backdrop" style="background-image:url(\'' + bg + '\')"></div>' : '')
     + '<div class="detail-overlay"></div>'
     + '<div class="detail-content">'

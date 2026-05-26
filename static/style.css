@@ -977,9 +977,29 @@ mark{background:transparent;color:var(--accent);font-weight:800}
   .row-section{margin-top:20px}
 }
 
-/* ===== Hero Banner ===== */
+/* ===== Back Button ===== */
 
-.hero{
+.back-hero-btn{
+  position:absolute;top:14px;left:14px;z-index:5;
+  width:36px;height:36px;
+  display:grid;place-items:center;
+  border-radius:50%;
+  border:1px solid rgba(255,255,255,.1);
+  background:rgba(0,0,0,.5);
+  backdrop-filter:blur(8px);
+  color:#fff;font-size:17px;font-weight:700;
+  cursor:pointer;line-height:1;
+  transition:background .2s ease,transform .2s ease;
+  -webkit-user-select:none;user-select:none
+}
+.back-hero-btn:hover{
+  background:rgba(255,255,255,.2);
+  transform:scale(1.12)
+}
+.back-hero-btn:active{transform:scale(.94)}
+.detail-hero{position:relative}
+
+/* ===== Hero Banner ===== */
   position:relative;height:480px;
   border-radius:var(--radius-xl);
   overflow:hidden;margin-bottom:28px;
