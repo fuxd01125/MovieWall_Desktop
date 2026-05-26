@@ -24,6 +24,7 @@ Architecture
 - The monitor runs in a daemon thread; it never blocks the main thread.
 """
 import re
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -58,6 +59,12 @@ _last_synced_playname = None
 _last_synced_playtime = None
 _last_ini_mtime = 0
 _lock = threading.Lock()
+
+# Last known progress for final sync on close
+_last_seen_path = None
+_last_seen_show_id = None
+_last_seen_episode_id = None
+_last_seen_progress = 0
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -257,17 +264,96 @@ def _sync_to_history(playname, playtime_ms):
 #  Watchdog-based monitoring
 # ═══════════════════════════════════════════════════════════════════════
 
+def _is_player_running():
+    """Check if a supported media player process is currently running.
+    Supports PotPlayer and VLC.
+    Returns True if any matching process is found.
+    """
+    player_keywords = ["potplayer", "vlc"]
+    try:
+        import psutil
+        for proc in psutil.process_iter(["name"]):
+            try:
+                name = proc.info.get("name", "") or ""
+                name_lower = name.lower()
+                for kw in player_keywords:
+                    if kw in name_lower:
+                        return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except ImportError:
+        pass
+    # Fallback: try tasklist (Windows)
+    try:
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+        for kw in player_keywords:
+            result = subprocess.run(
+                ["tasklist", "/FI", f"IMAGENAME eq {kw}*"],
+                capture_output=True, text=True, timeout=3,
+                startupinfo=startupinfo,
+            )
+            if kw in result.stdout.lower():
+                return True
+    except Exception:
+        pass
+    return True  # If we can't check, assume running
+
+
+def _do_final_sync():
+    """Save the last known progress when player was stopped.
+    Called when DPL becomes empty or player process is gone.
+    """
+    global _last_seen_episode_id, _last_seen_progress, _last_seen_path
+    global _last_synced_playname, _last_synced_playtime
+
+    if _last_seen_episode_id and _last_seen_progress > 0:
+        from moviewall.database import update_history_progress
+        update_history_progress(
+            _last_seen_show_id, _last_seen_episode_id,
+            _last_seen_progress, 0, _last_seen_path or "",
+        )
+        log.info("PLAYER FINAL SYNC: episode=%s progress=%.0fs",
+                 _last_seen_episode_id, _last_seen_progress)
+
+    _last_seen_path = None
+    _last_seen_show_id = None
+    _last_seen_episode_id = None
+    _last_seen_progress = 0
+    _last_synced_playname = None
+    _last_synced_playtime = None
+
+
 def _process_dpl(dpl_path):
     """Read the dpl file and sync if the playname or playtime changed.
 
     - If ``playname`` changed (new file): full sync to history.
     - If only ``playtime`` changed (same file): update progress only.
+    - If ``playname`` became empty (player closed): final sync + clear state.
+    - If player process is gone: final sync + clear state.
     - If nothing changed: skip.
+
+    Also tracks last-seen state for final sync when player stops.
     """
     global _last_synced_playname, _last_synced_playtime
+    global _last_seen_path, _last_seen_show_id, _last_seen_episode_id, _last_seen_progress
 
     playname, playtime_ms = _read_dpl(dpl_path)
+
+    # If DPL is empty, player stopped — final sync and clear
     if not playname:
+        with _lock:
+            if _last_synced_playname is not None:
+                log.info("PLAYER SYNC: player stopped (empty dpl)")
+            _do_final_sync()
+        return
+
+    # If player process is not running, data is stale
+    if not _is_player_running():
+        with _lock:
+            log.info("PLAYER SYNC: player process not running")
+            _do_final_sync()
         return
 
     with _lock:
@@ -278,16 +364,21 @@ def _process_dpl(dpl_path):
             # Same file, only progress changed — update progress
             _last_synced_playtime = playtime_ms
             progress_sec = playtime_ms / 1000 if playtime_ms else 0
+            # Track last seen for final sync
+            _last_seen_progress = progress_sec
             if progress_sec > 0:
                 info = _lookup_media_by_path(playname)
                 if info:
+                    _last_seen_path = info.get("path")
+                    _last_seen_show_id = info.get("media_id")
+                    _last_seen_episode_id = info.get("episode_id")
                     from moviewall.database import update_history_progress
                     update_history_progress(
                         info["media_id"], info["episode_id"],
                         progress_sec, 0, info["path"],
                     )
                     log.debug(
-                        "PLAYER PROGRESS: %s → %.0fs",
+                        "PLAYER PROGRESS: %s -> %.0fs",
                         info["short_label"], progress_sec,
                     )
             return
@@ -295,6 +386,13 @@ def _process_dpl(dpl_path):
         # File changed — full sync
         _last_synced_playname = playname
         _last_synced_playtime = playtime_ms
+
+    info = _lookup_media_by_path(playname)
+    if info:
+        _last_seen_path = info.get("path")
+        _last_seen_show_id = info.get("media_id")
+        _last_seen_episode_id = info.get("episode_id")
+        _last_seen_progress = (playtime_ms / 1000) if playtime_ms else 0
 
     _sync_to_history(playname, playtime_ms)
 
