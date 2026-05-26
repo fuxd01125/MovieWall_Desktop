@@ -44,21 +44,26 @@ def _cleanup_orphaned_entries(scanned_items):
                     if ef:
                         scanned_folders.add(str(Path(ef).resolve()))
 
+    orphans = []
     conn = get_conn()
     try:
-        orphans = conn.execute("SELECT id, folder FROM media WHERE folder IS NOT NULL").fetchall()
-        for row in orphans:
+        rows = conn.execute("SELECT id, folder FROM media WHERE folder IS NOT NULL").fetchall()
+        for row in rows:
             folder = row["folder"]
             folder_key = str(Path(folder).resolve()) if folder else ""
             if folder_key and folder_key not in scanned_folders and not Path(folder_key).exists():
                 log.info("Removing orphan: %s (folder no longer exists: %s)", row["id"], folder_key)
-                conn.close()
-                delete_media(row["id"])
-                conn = get_conn()
+                orphans.append(row["id"])
     except Exception:
         pass
     finally:
         conn.close()
+    # Delete orphans outside the query connection to avoid nesting issues
+    for orphan_id in orphans:
+        try:
+            delete_media(orphan_id)
+        except Exception:
+            log.error("Failed to delete orphan: %s", orphan_id)
 
 
 def _scan_movies(folder, cat_key, cat_name):
@@ -115,16 +120,43 @@ def _scan_movies(folder, cat_key, cat_name):
     return items
 
 
+def _detect_season_folders(show_folder):
+    """Detect season subdirectories supporting both English and Chinese naming.
+    Returns list of Path objects. Falls back to show_folder itself if no season dirs found.
+    """
+    season_dirs = []
+    for p in show_folder.iterdir():
+        if not p.is_dir():
+            continue
+        if re.search(r"Season\s*\d+", p.name, flags=re.I):
+            season_dirs.append(p)
+        elif re.search(r"第\s*\d+\s*季", p.name):
+            season_dirs.append(p)
+        elif re.search(r"第\s*[一二三四五六七八九十]+\s*季", p.name):
+            season_dirs.append(p)
+    if not season_dirs:
+        season_dirs = [show_folder]
+    season_dirs.sort(key=lambda p: parse_season_number(p.name))
+    return season_dirs
+
+
+def _episode_sort_key(p):
+    """Sort by episode number first, then by filename for deterministic order.
+    Returns (ep_number, 0, name) for parsed or (999999, 1, name) for fallback.
+    """
+    epn = parse_episode_number(p.name)
+    if epn:
+        return (epn, 0, p.name.lower())
+    return (999999, 1, p.name.lower())
+
+
 def _scan_shows(folder, cat_key, cat_name):
     """Scan TV shows from a category folder. Returns list of item dicts."""
     shows = []
-    dirs = [p for p in folder.iterdir() if p.is_dir()]
+    dirs = sorted([p for p in folder.iterdir() if p.is_dir()], key=lambda p: p.name.lower())
 
     for show_folder in dirs:
-        season_dirs = [p for p in show_folder.iterdir()
-                       if p.is_dir() and re.search(r"Season\s*\d+", p.name, flags=re.I)]
-        if not season_dirs:
-            season_dirs = [show_folder]
+        season_dirs = _detect_season_folders(show_folder)
 
         show_title = clean_title(show_folder.name)
         show_year = parse_year(show_folder.name)
@@ -135,9 +167,10 @@ def _scan_shows(folder, cat_key, cat_name):
             sn = parse_season_number(season_folder.name)
             videos = sorted(
                 [p for p in season_folder.rglob("*") if p.is_file() and p.suffix.lower() in VIDEO_EXTS],
-                key=lambda p: (parse_episode_number(p.name), p.name.lower()),
+                key=_episode_sort_key,
             )
             if not videos:
+                log.info("SKIP SEASON (no videos): show=%s folder=%s", show_title, season_folder.name)
                 continue
             season_id = stable_id("season", season_folder.resolve(), sn)
             episodes = []
