@@ -26,7 +26,7 @@ _scan_lock = threading.Lock()
 
 
 def find_media_by_id(media_id):
-    from moviewall.database import scrub_rows
+    from moviewall.database import scrub_rows, load_douban_season_meta
     conn = get_conn()
     try:
         row = conn.execute("SELECT * FROM media WHERE id=?", (media_id,)).fetchone()
@@ -52,10 +52,21 @@ def find_media_by_id(media_id):
             seasons = scrub_rows(conn2.execute(
                 "SELECT * FROM seasons WHERE show_id=? ORDER BY season_number", (media_id,)
             ).fetchall())
+            ds = load_douban_season_meta(media_id)
+            season_tmdb = tmdb.get("_season_data", {}) if tmdb else {}
             for s in seasons:
                 s["episodes"] = scrub_rows(conn2.execute(
                     "SELECT * FROM episodes WHERE season_id=? ORDER BY episode_number", (s["id"],)
                 ).fetchall())
+                ssn = str(s.get("season_number", ""))
+                s_meta = ds.get(ssn, {})
+                if s_meta:
+                    s["douban"] = s_meta
+                st = season_tmdb.get(ssn, {})
+                if st:
+                    s["tmdb"] = st
+            if ds:
+                item["_season_meta"] = ds
         except Exception:
             raise
         finally:
@@ -178,6 +189,8 @@ def register_routes(app):
             lib = build_library_dict()
             items = lib.get("items", [])
             total = len(items)
+            success_count = 0
+            fail_count = 0
             try:
                 if total > 0:
                     max_workers = min(5, total)
@@ -198,13 +211,20 @@ def register_routes(app):
                                                   "done": False, "error": ""}
                             try:
                                 future.result()
-                            except Exception:
-                                pass
+                                success_count += 1
+                            except Exception as e:
+                                fail_count += 1
+                                log.error("UPDATE FAILED: item=%s error=%s", item.get("id"), e)
                 with _scan_lock:
                     _scan_progress["done"] = True
+                    if fail_count > 0:
+                        _scan_progress["message"] = f"完成: {success_count}成功, {fail_count}失败"
+                    else:
+                        _scan_progress["message"] = f"完成: {success_count}项已更新"
             except Exception as e:
                 with _scan_lock:
-                    _scan_progress = {"progress": 1, "message": str(e), "done": True, "error": str(e)}
+                    _scan_progress = {"progress": 1, "message": str(e), "done": True, "error": str(e)
+                                      if total == 0 else f"部分更新: {success_count}成功, 失败: {str(e)}"}
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
@@ -449,7 +469,10 @@ def register_routes(app):
 
     @app.route("/api/update_single", methods=["POST"])
     def api_update_single():
-        """Re-fetch metadata for a single item with full cache invalidation."""
+        """Re-fetch metadata for a single item with full cache invalidation.
+        Clears all cache layers (metadata_cache.json + DB), re-fetches
+        TMDB + Douban, and returns the updated item data.
+        """
         data = request.get_json(force=True)
         media_id = data.get("media_id", "").strip()
         douban_id = data.get("douban_id", "").strip()
@@ -460,11 +483,16 @@ def register_routes(app):
             set_douban_id_override(media_id, douban_id)
 
         item = find_media_by_id(media_id)
-        if item:
-            from moviewall.metadata import clear_tmdb_cache
-            clear_tmdb_cache(media_id, item.get("title", ""))
-            log.info("UPDATE SINGLE: clearing cache for %s (%s)", media_id, item.get("title"))
-            # force_refresh=True ensures old cache is bypassed
-            attach_all_metadata(item, force_refresh=True)
+        if not item:
+            return jsonify({"ok": False, "error": "媒体不存在"}), 404
 
-        return jsonify({"ok": True, "media_id": media_id})
+        from moviewall.metadata import clear_tmdb_cache
+        clear_tmdb_cache(media_id, item.get("title", ""))
+        log.info("UPDATE SINGLE: clearing cache for %s (%s)", media_id, item.get("title"))
+
+        # Force-refresh TMDB + Douban metadata
+        attach_all_metadata(item, force_refresh=True)
+
+        # Return the freshly updated item
+        updated = find_media_by_id(media_id)
+        return jsonify({"ok": True, "media_id": media_id, "item": updated})
