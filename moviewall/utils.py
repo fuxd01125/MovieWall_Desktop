@@ -55,7 +55,7 @@ def normalize_key(text: str):
 def clean_title(text: str):
     title = safe_stem(text)
     title = re.sub(r"\(\s*(19|20)\d{2}\s*\)", " ", title)
-    title = re.sub(r"\[[^\]]+\]", " ", title)
+    title = re.sub(r"(?:^|[\s.\-_])\[([^\[\]]+)\]", " ", title)
     title = re.sub(r"\b(1080p|2160p|720p|480p|4K|BluRay|WEB-DL|WEBRip|HDRip|DVDRip|BDRip|HDR|HEVC|x265|x264|AAC|DDP5\.1|H\.264|H\.265)\b", " ", title, flags=re.I)
     title = re.sub(r"\b[Ss]\d{1,2}[Ee]\d{1,3}\b", " ", title)
     title = re.sub(r"(?<!\d)[_\-]+(?!\d)", " ", title)
@@ -69,11 +69,20 @@ def parse_year(text: str):
     return m.group(0).strip("()") if m else ""
 
 
+_CN_NUM_SEASON = {"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"十":10}
+
 def parse_season_number(text: str):
-    m = re.search(r"Season\s*(\d+)", str(text), flags=re.I)
+    s = str(text)
+    m = re.search(r"Season\s*(\d+)", s, flags=re.I)
     if m:
         return int(m.group(1))
-    m = re.search(r"[Ss](\d{1,2})", str(text))
+    m = re.search(r"第\s*(\d+)\s*季", s)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"第\s*([一二三四五六七八九十]+)\s*季", s)
+    if m:
+        return _CN_NUM_SEASON.get(m.group(1), 1)
+    m = re.search(r"[Ss](\d{1,2})", s)
     if m:
         return int(m.group(1))
     return 1
@@ -86,7 +95,7 @@ def parse_episode_number(text: str):
     m = re.search(r"[Ss]\d{1,2}[Ee](\d{1,3})", s)
     if m:
         return int(m.group(1))
-    m = re.search(r"[Ee](\d{1,3})", s)
+    m = re.search(r"[Ee][pP]?(\d{1,3})", s)
     if m:
         return int(m.group(1))
     m = re.search(r"[Tt]ape[.\s]*(\d{1,3})", s)
@@ -102,6 +111,9 @@ def parse_episode_number(text: str):
     if m:
         return _CN_NUM.get(m.group(1), 0)
     m = re.search(r"\b(\d{1,3})\s*[话集章回]", s)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"(?:^|[\s._\-])#\s*(\d{1,3})(?:[\s._\-]|$)", s)
     if m:
         return int(m.group(1))
     return 0
