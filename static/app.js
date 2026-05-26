@@ -664,7 +664,7 @@ function renderSeasonCard(show, season, expanded) {
   const sMeta = sm[String(season.season_number)] || {};
   const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
   const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
-  const seasonPoster = artworkUrl(season, "poster") || (sMeta.poster_url || tmdbSeasonData.poster_url || "");
+  const seasonPoster = artworkUrl(season, "poster") || tmdbSeasonData.poster_url || sMeta.poster_url || "";
   const moreId = "smore-" + show.id + "-" + season.season_number;
   const showMore = seasonMoreOpen === moreId;
   const moreHtml = '<div class="season-more-wrap" onclick="event.stopPropagation()">'
@@ -700,7 +700,7 @@ function renderInlineEpisodes(show, season) {
   const sMeta = sm[String(season.season_number)] || {};
   const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
   const seasonSynopsis = sMeta.synopsis || tmdbSeasonData.overview || "";
-  const seasonPoster = artworkUrl(season, "poster") || (sMeta.poster_url || tmdbSeasonData.poster_url || "");
+  const seasonPoster = artworkUrl(season, "poster") || tmdbSeasonData.poster_url || sMeta.poster_url || "";
   let detailHtml = '';
   if (seasonSynopsis || seasonPoster || sMeta.cast_info || sMeta.air_date) {
     detailHtml = '<div class="season-detail-card">'
@@ -736,7 +736,7 @@ function renderSeasonDetail(show, season) {
   const seasonSynopsis = sMeta.synopsis || tmdbSeasonData.overview || "";
   const origTitle = t.original_title && t.original_title !== titleOf(show) ? t.original_title : "";
 
-  const seasonPosterUrl = sMeta.poster_url || tmdbSeasonData.poster_url || t.poster_url;
+  const seasonPosterUrl = tmdbSeasonData.poster_url || sMeta.poster_url || t.poster_url;
   const seasonHero = {
     ...season,
     display_title: titleOf(show) + " · " + season.title,

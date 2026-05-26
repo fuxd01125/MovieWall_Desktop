@@ -5,6 +5,7 @@ import http.cookiejar
 import json
 import random
 import re
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -23,6 +24,11 @@ _BLOCK_COOLDOWN_403 = 86400       # 24h after HTTP 403
 _BLOCK_COOLDOWN_TIMEOUT = 3600    # 1h after timeout
 _BLOCK_COOLDOWN_NETWORK = 1800    # 30min after network failure
 
+# In-memory cache for _douban_available() — avoids repeated file reads
+_available_cache = {"available": None, "timestamp": 0}
+_available_cache_lock = threading.Lock()
+_AVAILABLE_CACHE_TTL = 60  # seconds
+
 def _douban_health():
     """Return (blocked, reason, blocked_until) for current Douban provider state."""
     with cache_lock:
@@ -37,7 +43,9 @@ def _douban_health():
     return False, "", 0
 
 def _set_douban_blocked(reason="blocked"):
-    """Mark Douban provider as blocked with cooldown."""
+    """Mark Douban provider as blocked with cooldown.
+    Immediately updates in-memory cache so subsequent calls skip file reads.
+    """
     now = time.time()
     reason_lower = reason.lower()
     if "403" in reason_lower or "blocked" in reason_lower:
@@ -56,16 +64,30 @@ def _set_douban_blocked(reason="blocked"):
             "failure_count": cache.get(_DOUBAN_BLOCKED_KEY, {}).get("failure_count", 0) + 1,
         }
         write_json(METADATA_CACHE_FILE, cache)
+    with _available_cache_lock:
+        _available_cache["available"] = False
+        _available_cache["timestamp"] = now
     log.warning("Douban provider blocked (cooldown=%.1fh, reason=%s)", cooldown / 3600, reason)
 
 def _douban_available():
-    """Early-exit check: returns False if Douban provider is in cooldown."""
+    """Early-exit check: returns False if Douban provider is in cooldown.
+    Uses in-memory cache with 60s TTL to avoid repeated file reads.
+    """
+    now = time.time()
+    with _available_cache_lock:
+        if _available_cache["available"] is not None and now - _available_cache["timestamp"] < _AVAILABLE_CACHE_TTL:
+            return _available_cache["available"]
     blocked, reason, until = _douban_health()
     if blocked:
-        return False
-    if not load_config().get("douban_enabled", True):
-        return False
-    return True
+        result = False
+    elif not load_config().get("douban_enabled", True):
+        result = False
+    else:
+        result = True
+    with _available_cache_lock:
+        _available_cache["available"] = result
+        _available_cache["timestamp"] = now
+    return result
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",

@@ -1,10 +1,8 @@
 """Metadata provider — fetches TMDB + Douban data, stores separately in DB."""
 import time
-from pathlib import Path
-from urllib.request import urlopen
 
 from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE, cache_lock
-from moviewall.database import save_tmdb_meta, save_douban_meta, save_douban_season_meta, get_conn
+from moviewall.database import save_tmdb_meta, save_douban_meta, save_douban_season_meta
 from moviewall.utils import normalize_key, tmdb_request, tmdb_image
 
 
@@ -105,6 +103,10 @@ def attach_all_metadata(item):
     cfg = load_config()
     meta = {}
 
+    # Single check — avoids redundant load_config + _douban_health reads per season/item
+    from moviewall.douban import _douban_available
+    douban_ok = cfg.get("douban_enabled", True) and _douban_available()
+
     # ── TMDB ─────────────────────────────────────────────────────
     tmdb_data = get_tmdb_metadata(item.get("title", ""), item.get("year", ""), media_type)
     if tmdb_data:
@@ -122,7 +124,7 @@ def attach_all_metadata(item):
             item["display_title"] = tmdb_data["title"]
 
     # ── Douban (show-level) ──────────────────────────────────────
-    if cfg.get("douban_enabled", True):
+    if douban_ok:
         from moviewall.douban import fetch_douban_meta, fetch_douban_by_id
         overrides = cfg.get("douban_id_overrides", {})
         override_id = overrides.get(media_id, "")
@@ -145,7 +147,7 @@ def attach_all_metadata(item):
     item["metadata"] = meta
 
     # ── Douban per-season (for shows) ────────────────────────────
-    if item.get("type") == "show" and cfg.get("douban_enabled", True):
+    if item.get("type") == "show" and douban_ok:
         from moviewall.douban import fetch_douban_by_season
         show_title = tmdb_data.get("title", "") if tmdb_data else item.get("title", "")
         show_year = item.get("year", "")
@@ -162,36 +164,10 @@ def attach_all_metadata(item):
             if sdata:
                 save_douban_season_meta(season["id"], media_id, sn, sdata)
                 season_meta[str(sn)] = sdata
-                _download_season_poster(sdata, season, item)
         if season_meta:
             item["_season_meta"] = season_meta
 
     return item
 
 
-def _download_season_poster(sdata, season, show_item):
-    poster_url = sdata.get("poster_url")
-    if not poster_url or poster_url.startswith("/api/artwork"):
-        return
-    season_folder = Path(season.get("folder"))
-    if not season_folder.exists():
-        return
-    poster_path = season_folder / "poster.jpg"
-    if poster_path.exists():
-        return
-    try:
-        with urlopen(poster_url, timeout=10) as resp:
-            data = resp.read()
-        poster_path.write_bytes(data)
-        season["poster"] = str(poster_path.resolve())
-        conn = get_conn()
-        try:
-            conn.execute("UPDATE seasons SET poster=? WHERE id=?", (season["poster"], season["id"]))
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-    except Exception:
-        pass
+
