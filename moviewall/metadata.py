@@ -231,7 +231,9 @@ def get_tmdb_metadata(title, year, media_type, force_refresh=False, local_season
 
 
 def fetch_tmdb_seasons(tmdb_id, seasons_list, lang):
-    """Fetch per-season TMDB metadata (rating, air_date, overview, poster)."""
+    """Fetch per-season TMDB metadata (rating, air_date, overview, poster).
+    Falls back to en-US for overview when the preferred language has none.
+    """
     with cache_lock:
         cache = read_json(METADATA_CACHE_FILE, {})
     season_map = {}
@@ -258,8 +260,27 @@ def fetch_tmdb_seasons(tmdb_id, seasons_list, lang):
                 entry["rating"] = sdata["vote_average"]
             if sdata.get("air_date"):
                 entry["air_date"] = sdata["air_date"]
-            if sdata.get("overview"):
-                entry["overview"] = sdata["overview"]
+            overview = sdata.get("overview") or ""
+            if not overview.strip() and lang != "en-US":
+                en_ck = f"season:{tmdb_id}:{sn}:en-US"
+                with cache_lock:
+                    en_cached = cache.get(en_ck)
+                    if en_cached and time.time() - en_cached.get("_cached_at", 0) < int(load_config().get("metadata_cache_days", 30)) * 86400:
+                        en_sdata = en_cached.get("data", {})
+                    else:
+                        en_sdata = None
+                if en_sdata is None:
+                    en_sdata = tmdb_request(f"tv/{tmdb_id}/season/{sn}", {"language": "en-US"}) or {}
+                    if en_sdata:
+                        with cache_lock:
+                            cache = read_json(METADATA_CACHE_FILE, {})
+                            cache[en_ck] = {"_cached_at": time.time(), "data": en_sdata}
+                if en_sdata:
+                    en_overview = (en_sdata.get("overview") or "").strip()
+                    if en_overview:
+                        overview = en_overview
+            if overview:
+                entry["overview"] = overview
             if sdata.get("poster_path"):
                 entry["poster_url"] = tmdb_image(sdata["poster_path"], "w500")
             if entry:
