@@ -502,6 +502,13 @@ def save_tmdb_meta(media_id, data):
             json.dumps(data, ensure_ascii=False),
             time.time(),
         ))
+        # Increment metadata version for freshness tracking
+        conn.execute("""
+            INSERT INTO metadata_tracker (key, value) VALUES ('metadata_version', 
+                COALESCE((SELECT value FROM metadata_tracker WHERE key='metadata_version'), '0'))
+            ON CONFLICT(key) DO UPDATE SET
+                value = CAST(CAST(COALESCE(metadata_tracker.value, '0') AS INTEGER) + 1 AS TEXT)
+        """)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -951,6 +958,11 @@ def build_library_dict():
             meta["tmdb"] = tmdb
         if douban:
             meta["douban"] = douban
+            # API-layer fallback: if TMDB overview is empty, use Douban synopsis
+            # This avoids writing Douban data into TMDB DB fields (metadata pollution fix)
+            if tmdb and not tmdb.get("overview", "").strip() and douban.get("synopsis", "").strip():
+                meta["tmdb"] = dict(tmdb)
+                meta["tmdb"]["overview"] = douban["synopsis"]
         item["metadata"] = meta
 
         if item["type"] == "show":
@@ -974,9 +986,20 @@ def build_library_dict():
 
         items.append(item)
 
+    # Freshness tracking
+    conn3 = get_conn()
+    try:
+        version_row = conn3.execute("SELECT value FROM metadata_tracker WHERE key='metadata_version'").fetchone()
+        metadata_version = version_row["value"] if version_row else "0"
+    except Exception:
+        metadata_version = "0"
+    finally:
+        conn3.close()
+
     stats = {
         "movies": sum(1 for i in items if i["type"] == "movie"),
         "shows": sum(1 for i in items if i["type"] == "show"),
         "episodes": sum(i.get("episode_count", 0) for i in items if i["type"] == "show"),
+        "metadata_version": metadata_version,
     }
     return {"items": items, "stats": stats}
