@@ -3,7 +3,6 @@ build/
 dist/
 *.spec
 *.log
-config.json
 library.json
 library.db
 metadata_cache.json
