@@ -978,81 +978,40 @@ mark{background:transparent;color:var(--accent);font-weight:800}
   .row-section{margin-top:20px}
 }
 
-/* ===== Back Button (Glassmorphism) ===== */
+/* ===== Back Button ===== */
 
 .back-hero-btn{
   position:absolute;top:20px;left:20px;z-index:5;
-  width:52px;height:52px;
+  width:38px;height:38px;
   display:grid;place-items:center;
   border-radius:50%;
-  border:1px solid rgba(255,255,255,.12);
-  background:rgba(0,0,0,.35);
-  backdrop-filter:blur(12px);
-  -webkit-backdrop-filter:blur(12px);
+  border:1px solid rgba(255,255,255,.1);
+  background:rgba(0,0,0,.5);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
   color:#fff;
   cursor:pointer;line-height:1;
-  box-shadow:0 2px 12px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.08);
   transition:transform .3s cubic-bezier(.34,1.56,.64,1),
-              background .3s ease,
-              box-shadow .3s ease;
+              background .3s ease;
   -webkit-user-select:none;user-select:none;
   overflow:hidden
 }
 .back-hero-btn:hover{
   transform:scale(1.1);
-  background:rgba(0,0,0,.5);
-  box-shadow:0 4px 20px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.1)
+  background:rgba(0,0,0,.65)
 }
-.back-hero-btn:active{transform:scale(.92)}
+.back-hero-btn:active{transform:scale(.9)}
 
-/* Ripple effect via pseudo-element */
-.back-hero-btn::after{
-  content:'';position:absolute;inset:0;
-  border-radius:50%;
-  background:radial-gradient(circle at center,rgba(255,255,255,.4) 0%,transparent 60%);
-  opacity:0;
-  transition:opacity .3s ease;
-  pointer-events:none
-}
-.back-hero-btn:active::after{
-  opacity:1;
-  animation:backBtnRipple .5s ease forwards
-}
-@keyframes backBtnRipple{
-  0%{transform:scale(0);opacity:.5}
-  50%{opacity:.3}
-  100%{transform:scale(2.5);opacity:0}
-}
-
-/* Modern arrow icon via SVG background */
-.back-hero-btn .arrow-icon{
-  width:22px;height:22px;
-  position:relative;z-index:1;
-  pointer-events:none;
-  display:block
-}
 .back-hero-btn svg{
   display:block;
-  filter:drop-shadow(0 1px 3px rgba(0,0,0,.3))
-}
-
-/* Light theme override */
-@media(prefers-color-scheme:light){
-  .back-hero-btn{
-    background:rgba(255,255,255,.65);
-    border-color:rgba(0,0,0,.08);
-    box-shadow:0 2px 12px rgba(0,0,0,.1),inset 0 1px 0 rgba(255,255,255,.8);
-    color:#222
-  }
-  .back-hero-btn:hover{
-    background:rgba(255,255,255,.8);
-    box-shadow:0 4px 20px rgba(0,0,0,.15),inset 0 1px 0 rgba(255,255,255,.9)
-  }
+  width:17px;height:17px;
+  position:relative;z-index:1
 }
 
 .detail-hero{position:relative}
 
 /* ===== Hero Banner ===== */
+.hero{
   position:relative;height:480px;
   border-radius:var(--radius-xl);
   overflow:hidden;margin-bottom:28px;

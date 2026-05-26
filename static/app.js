@@ -737,7 +737,7 @@ function detailHero(item, bodyHtml) {
   const poster = tmdb(item).poster_url || artworkUrl(item, "poster") || artworkUrl(item, "thumb");
   return '<section class="detail-hero">'
     + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回" aria-label="返回">'
-    + '<svg class="arrow-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>'
+    + '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>'
     + '</button>'
     + (bg ? '<div class="detail-backdrop" style="background-image:url(\'' + bg + '\')"></div>' : '')
     + '<div class="detail-overlay"></div>'
