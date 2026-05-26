@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS seasons (
     title          TEXT,
     folder         TEXT,
     poster         TEXT,
-    episode_count  INTEGER DEFAULT 0
+    episode_count  INTEGER DEFAULT 0,
+    UNIQUE(show_id, season_number)
 );
 
 CREATE TABLE IF NOT EXISTS episodes (
@@ -50,7 +51,8 @@ CREATE TABLE IF NOT EXISTS episodes (
     filename        TEXT,
     path            TEXT,
     folder          TEXT,
-    thumb           TEXT
+    thumb           TEXT,
+    UNIQUE(show_id, season_id, episode_number)
 );
 
 -- TMDB metadata — fully separate from core & douban
@@ -133,6 +135,9 @@ CREATE INDEX IF NOT EXISTS idx_seasons_show   ON seasons(show_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_show  ON episodes(show_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_season ON episodes(season_id);
 CREATE INDEX IF NOT EXISTS idx_history_media  ON history(media_id);
+CREATE INDEX IF NOT EXISTS idx_media_path    ON media(path);
+CREATE INDEX IF NOT EXISTS idx_media_folder  ON media(folder);
+CREATE INDEX IF NOT EXISTS idx_episodes_path ON episodes(path);
 
 -- Scanner state tracking
 CREATE TABLE IF NOT EXISTS metadata_tracker (
@@ -154,6 +159,69 @@ def get_conn():
     return conn
 
 
+def _migrate_schema_v2():
+    """Add UNIQUE constraints and indexes to existing databases.
+    Rebuilds seasons and episodes tables with UNIQUE constraints.
+    Safe to run multiple times.
+    """
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT value FROM metadata_tracker WHERE key='schema_version'").fetchone()
+        if row and row["value"] == "2":
+            return
+        conn.execute("PRAGMA foreign_keys=OFF")
+        # Rebuild seasons with UNIQUE(show_id, season_number)
+        conn.execute("""
+            CREATE TABLE seasons_v2 (
+                id             TEXT PRIMARY KEY,
+                show_id        TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+                season_number  INTEGER NOT NULL,
+                title          TEXT,
+                folder         TEXT,
+                poster         TEXT,
+                episode_count  INTEGER DEFAULT 0,
+                UNIQUE(show_id, season_number)
+            )
+        """)
+        conn.execute("INSERT OR IGNORE INTO seasons_v2 SELECT * FROM seasons")
+        conn.execute("DROP TABLE IF EXISTS seasons")
+        conn.execute("ALTER TABLE seasons_v2 RENAME TO seasons")
+        # Rebuild episodes with UNIQUE(show_id, season_id, episode_number)
+        conn.execute("""
+            CREATE TABLE episodes_v2 (
+                id              TEXT PRIMARY KEY,
+                show_id         TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+                season_id       TEXT NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+                season_number   INTEGER NOT NULL,
+                episode_number  INTEGER,
+                title           TEXT,
+                filename        TEXT,
+                path            TEXT,
+                folder          TEXT,
+                thumb           TEXT,
+                UNIQUE(show_id, season_id, episode_number)
+            )
+        """)
+        conn.execute("INSERT OR IGNORE INTO episodes_v2 SELECT * FROM episodes")
+        conn.execute("DROP TABLE IF EXISTS episodes")
+        conn.execute("ALTER TABLE episodes_v2 RENAME TO episodes")
+        # Add performance indexes
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_media_path ON media(path)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_media_folder ON media(folder)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_episodes_path ON episodes(path)")
+        conn.execute("INSERT OR REPLACE INTO metadata_tracker (key, value) VALUES ('schema_version', '2')")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+        except Exception:
+            pass
+        conn.close()
+
+
 def init_db():
     conn = get_conn()
     try:
@@ -171,9 +239,7 @@ def init_db():
                 pass
         # Fix: ensure only one row per media_id (latest played_at), delete old TEXT entries
         try:
-            # 1. Delete rows where played_at is TEXT (ISO strings from old frontend bug)
             conn.execute("DELETE FROM history WHERE typeof(played_at) = 'text'")
-            # 2. Deduplicate: keep only the latest row per media_id
             conn.execute("""
                 DELETE FROM history WHERE rowid NOT IN (
                     SELECT MIN(rowid) FROM history
@@ -189,6 +255,8 @@ def init_db():
         raise
     finally:
         conn.close()
+    # Run v2 schema migration (UNIQUE constraints + indexes)
+    _migrate_schema_v2()
 
 
 def scrub_row(row):
@@ -886,8 +954,21 @@ def build_library_dict():
         item["metadata"] = meta
 
         if item["type"] == "show":
-            item["seasons"] = all_shows.get(mid, [])
-            ds = all_ds.get(mid)
+            seasons_data = all_shows.get(mid, [])
+            ds = all_ds.get(mid, {})
+            # Merge per-season TMDB and Douban metadata into each season object
+            season_tmdb = tmdb.get("_season_data", {}) if tmdb else {}
+            for s in seasons_data:
+                ssn = str(s.get("season_number", ""))
+                # Douban per-season metadata
+                s_meta = ds.get(ssn, {})
+                if s_meta:
+                    s["douban"] = s_meta
+                # TMDB per-season overview (overrides show-level overview for season)
+                st = season_tmdb.get(ssn, {})
+                if st:
+                    s["tmdb"] = st
+            item["seasons"] = seasons_data
             if ds:
                 item["_season_meta"] = ds
 

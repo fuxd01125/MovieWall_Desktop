@@ -5,6 +5,7 @@ dist/
 *.log
 config.json
 library.json
+library.db
 metadata_cache.json
 ratings.json
 history.json
