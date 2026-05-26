@@ -397,16 +397,31 @@ def fetch_douban_by_id(douban_id):
     return result
 
 
-def _fetch_mobile_detail(douban_id):
+def _clear_mobile_cache_for_show(show_title):
+    """Clear mobile detail cache entries that may contain this show's data."""
+    with cache_lock:
+        cache = read_json(METADATA_CACHE_FILE, {})
+        keys = [k for k in cache if k.startswith("mobile:") or k.startswith("synopsis:")]
+        # Only clear if there are relevant entries (we can't identify by show title,
+        # so we clear all mobile caches during force refresh)
+        for k in keys:
+            del cache[k]
+        if keys:
+            write_json(METADATA_CACHE_FILE, cache)
+            log.info("DOUBAN: cleared %d mobile cache entries for force refresh", len(keys))
+
+
+def _fetch_mobile_detail(douban_id, force_refresh=False):
     """Fetch synopsis + poster + other details from mobile page."""
     if not _douban_available():
         return {}
     cfg = load_config()
     ttl = int(cfg.get("metadata_cache_days", 30)) * 86400
     ck = f"mobile:{douban_id}"
-    cached = _cache_get(ck)
-    if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < ttl:
-        return cached["data"]
+    if not force_refresh:
+        cached = _cache_get(ck)
+        if cached and cached.get("data") is not None and time.time() - cached.get("_cached_at", 0) < ttl:
+            return cached["data"]
 
     time.sleep(float(cfg.get("douban_request_delay", 0.5)) + random.uniform(0, 0.3))
     url = DOUBAN_MOBILE.format(douban_id)
@@ -480,25 +495,29 @@ def _build_season_queries(show_title, season_number, original_title=""):
     return unique
 
 
-def fetch_douban_by_season(show_title, show_year, season_number, original_title=""):
+def fetch_douban_by_season(show_title, show_year, season_number, original_title="", force_refresh=False):
     """Search Douban for a specific season of a show.
 
     CRITICAL: Never returns show-level data for season searches.
     Returns None if no season-specific page is found.
+    When force_refresh=True, bypasses mobile detail page cache.
     """
     if not _douban_available():
         return None
 
     queries = _build_season_queries(show_title, season_number, original_title)
 
-    log.info("DOUBAN SEASON: show=%s season=%d queries=%s",
-             show_title, season_number, queries)
+    log.info("DOUBAN SEASON: show=%s season=%d force_refresh=%s queries=%s",
+             show_title, season_number, force_refresh, queries)
 
     best_item = None
     best_score = -1
 
     for query in queries:
         is_exact = "第" in query or "Season" in query or "S{:02d}".format(season_number) in query
+        # Force refresh: clear mobile detail cache for this show before searching
+        if force_refresh:
+            _clear_mobile_cache_for_show(show_title)
         item = _search(query, show_year, season_number, media_type="tv")
         if item:
             score = _season_match_score(item.get("title", ""), season_number)
@@ -521,7 +540,7 @@ def fetch_douban_by_season(show_title, show_year, season_number, original_title=
 
     result = _parse_rating(best_item)
     if result and result.get("douban_id"):
-        detail = _fetch_mobile_detail(result["douban_id"])
+        detail = _fetch_mobile_detail(result["douban_id"], force_refresh)
         if detail:
             if detail.get("synopsis"):
                 result["synopsis"] = detail["synopsis"]
