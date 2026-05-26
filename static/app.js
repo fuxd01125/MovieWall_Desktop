@@ -361,7 +361,8 @@ function renderHero(item) {
   if (!item) return '';
   const t = tmdb(item);
   const d = douban(item);
-  const backdropRaw = t.backdrop_url || t.poster_url || artworkUrl(item, "poster");
+  const backdropRaw = t.backdrop_url || artworkUrl(item, "thumb") || t.poster_url || artworkUrl(item, "poster");
+  const posterRaw = artworkUrl(item, "poster") || t.poster_url;
   const heroRating = d.rating || t.rating || "";
   const genres = (t.genres || []).slice(0, 3);
   const isShow = item.type === "show";
@@ -372,15 +373,19 @@ function renderHero(item) {
     : hist ? "playItemHistory('" + item.id + "')" : "openDetail('" + item.id + "')";
   const playLabel = isShow && hist ? "▶ 继续播放" : (hist ? "▶ 继续播放" : "▶ 立即观看");
 
-  return '<div class="hero">'
-    + '<div class="hero-backdrop" style="background-image:url(' + backdropRaw + ')"></div>'
+  const typeLabel = isShow ? ((item.season_count || 0) + ' 季 · ' + (item.episode_count || 0) + ' 集') : '电影';
+
+  return '<div class="hero' + (hist ? ' is-continue' : '') + '">'
+    + (backdropRaw ? '<div class="hero-backdrop" style="background-image:url(\'' + backdropRaw + '\')"></div>' : '')
     + '<div class="hero-gradient"></div>'
+    + '<div class="hero-vignette"></div>'
     + '<div class="hero-content">'
-    + (hist ? '<div class="hero-badge">▶ 继续观看</div>' : '<div class="hero-badge">精选推荐</div>')
+    + '<div class="hero-badge">' + (hist ? '继续观看' : '今日推荐') + '</div>'
     + '<h1 class="hero-title">' + escapeHtml(titleOf(item)) + '</h1>'
     + '<div class="hero-meta">'
     + (heroRating ? '<span class="rating-badge lg' + (d.rating ? ' douban' : '') + '">★ ' + Number(heroRating).toFixed(1) + '</span>' : '')
     + (item.year ? '<span class="year">' + escapeHtml(item.year) + '</span>' : '')
+    + '<span class="year">' + escapeHtml(typeLabel) + '</span>'
     + (genres.length ? genres.map(g => '<span class="genre-tag">' + escapeHtml(g) + '</span>').join('') : '')
     + '</div>'
     + '<div class="hero-overview">' + escapeHtml(t.overview || d.synopsis || "") + '</div>'
@@ -388,7 +393,10 @@ function renderHero(item) {
     + '<button class="cta-btn" onclick="event.stopPropagation();' + playAction + '">' + playLabel + '</button>'
     + '<button class="cta-btn secondary' + (isFavorite(item.id) ? ' favorited' : '') + '" onclick="event.stopPropagation();toggleFavorite(\'' + item.id + '\')">' + (isFavorite(item.id) ? '♥ 已收藏' : '♡ 收藏') + '</button>'
     + '<button class="cta-btn secondary" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')">详情</button>'
-    + '</div></div></div>';
+    + '</div></div>'
+    + (posterRaw ? '<div class="hero-poster"><img src="' + posterRaw + '" loading="lazy" alt=""></div>' : '')
+    + '<div class="hero-bottom-fade"></div>'
+    + '</div>';
 }
 
 /* ── Horizontal Scroll Row ──────────────────────── */
@@ -400,9 +408,9 @@ function renderRowSection(title, items, renderFn, moreKey) {
     + '<div class="row-header"><h2>' + escapeHtml(title) + '</h2>'
     + (moreLink ? '<span class="row-more"' + moreLink + '>查看全部 →</span>' : '')
     + '</div>'
-    + '<div class="row-scroll">'
+    + '<div class="row-shell"><div class="row-scroll">'
     + items.map(renderFn).join('')
-    + '</div></section>';
+    + '</div></div></section>';
 }
 
 /* ── Home Page ──────────────────────────────────── */
@@ -544,16 +552,42 @@ function getContinueItems() {
 
 /* ===== Card Overlay ===== */
 
+function primaryPlayAction(item) {
+  const hist = getItemHistory(item);
+  if (hist) return "playItemHistory('" + item.id + "')";
+  if (item.type === "movie" && item.path) {
+    const entry = "{media_id:'" + item.id + "',type:'movie',path:'" + escapeJs(item.path) + "',title:'" + escapeJs(titleOf(item)) + "',show_title:'" + escapeJs(titleOf(item)) + "',label:'电影',short_label:'电影'}";
+    return "playMedia('" + escapeJs(item.path) + "'," + entry + ")";
+  }
+  if (item.type === "show") {
+    const firstEp = findFirstEpisode(item);
+    if (firstEp) {
+      return "playMedia('" + escapeJs(firstEp.ep.path) + "'," + episodeEntry(item, firstEp.season, firstEp.ep, firstEp.season.title + " · " + firstEp.ep.title) + ")";
+    }
+  }
+  return "openDetail('" + item.id + "')";
+}
+
 function renderCardOverlay(item) {
   const t = tmdb(item);
   const d = douban(item);
   const genres = (t.genres || []).slice(0, 2);
+  const hist = getItemHistory(item);
+  const typeLabel = item.type === "show" ? ((item.season_count || 0) + " 季") : "电影";
   let metaHtml = '';
   if (item.year) metaHtml += '<span class="rating-badge sm">' + escapeHtml(item.year) + '</span>';
   if (d.rating) metaHtml += '<span class="rating-badge sm douban">豆 ' + Number(d.rating).toFixed(1) + '</span>';
   else if (t.rating) metaHtml += renderRatingBadge(t.rating, {sm:true});
   if (genres.length) metaHtml += genres.map(g => '<span class="rating-badge sm" style="background:rgba(255,255,255,.08);color:var(--muted);font-weight:500">' + escapeHtml(g) + '</span>').join('');
-  return '<div class="card-overlay"><div class="card-meta">' + metaHtml + '</div><div class="card-play-btn" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')">▶ 详情</div></div>';
+  return '<div class="card-overlay">'
+    + '<div class="poster-actions">'
+    + '<button class="poster-play" onclick="event.stopPropagation();' + primaryPlayAction(item) + '" title="播放">▶</button>'
+    + '<button class="poster-info" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')" title="详情">i</button>'
+    + '</div>'
+    + '<div class="card-meta">' + metaHtml + '</div>'
+    + '<div class="card-overlay-title">' + escapeHtml(titleOf(item)) + '</div>'
+    + '<div class="card-overlay-subtitle">' + (hist ? '继续观看' : escapeHtml(typeLabel)) + '</div>'
+    + '</div>';
 }
 
 function renderHomeCard(item) {
@@ -602,7 +636,12 @@ function renderContinueCard(entry) {
     + (artworkUrl(item, "poster")
       ? '<img src="' + artworkUrl(item, "poster") + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder\\\'>' + escapeHtml(title) + '</div>\'">'
       : '<div class="placeholder">' + escapeHtml(title) + '</div>')
-    + '<div class="card-overlay"><div class="card-meta"><span class="rating-badge sm">' + escapeHtml(label) + '</span></div><div class="card-play-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(hist.path) + '\',' + histEntry + ')">▶ 播放</div></div>'
+    + '<div class="card-overlay">'
+    + '<div class="poster-actions"><button class="poster-play" onclick="event.stopPropagation();playMedia(\'' + escapeJs(hist.path) + '\',' + histEntry + ')" title="继续播放">▶</button><button class="poster-info" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')" title="详情">i</button></div>'
+    + '<div class="card-meta"><span class="rating-badge sm">' + escapeHtml(label) + '</span></div>'
+    + '<div class="card-overlay-title">' + escapeHtml(title) + '</div>'
+    + '<div class="card-overlay-subtitle">继续观看</div>'
+    + '</div>'
     + (progressPct > 0 ? '<div class="card-progress"><div class="card-progress-bar" style="width:' + progressPct + '%"></div></div>' : '')
     + '</div>'
     + '<div class="card-body"><div class="continue-kicker">▶ 继续观看</div><h4 class="card-title">' + escapeHtml(title) + '</h4></div>'
@@ -613,7 +652,7 @@ function renderContinueCard(entry) {
 
 function showSkeleton() {
   const card = '<div class="skeleton-card"><div class="skeleton-poster skeleton"></div><div class="skeleton-title skeleton"></div></div>';
-  app.innerHTML = '<section class="section"><div class="grid">' + card.repeat(12) + '</div></section>';
+  app.innerHTML = '<section class="section loading-section"><div class="grid">' + card.repeat(12) + '</div></section>';
 }
 
 function openDetail(id) { navigateTo({type:"detail", id}); }
@@ -735,9 +774,9 @@ function renderDoubanTags(item) {
 function detailHero(item, bodyHtml) {
   const bg = backdropUrl(item);
   const poster = tmdb(item).poster_url || artworkUrl(item, "poster") || artworkUrl(item, "thumb");
-  return '<section class="detail-hero">'
+  return '<section class="detail-hero cinematic-detail">'
     + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回" aria-label="返回">'
-    + '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>'
+    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
     + '</button>'
     + (bg ? '<div class="detail-backdrop" style="background-image:url(\'' + bg + '\')"></div>' : '')
     + '<div class="detail-overlay"></div>'
@@ -1183,8 +1222,23 @@ async function loadLibrary() {
   historyCache = await historyRes.json();
   players = await playersRes.json();
   categoriesConfig = (await configRes.json()).categories || {};
+  normalizeCategoriesConfig();
   favoritesCache = await favRes.json();
   renderHome();
+}
+
+function normalizeCategoriesConfig() {
+  const normalized = {};
+  for (const [key, value] of Object.entries(categoriesConfig || {})) {
+    if (typeof value === "string") {
+      const lower = (key + " " + value).toLowerCase();
+      const type = lower.includes("tv") || lower.includes("show") || lower.includes("anime") || lower.includes("剧") || lower.includes("动漫") ? "show" : "movie";
+      normalized[key] = {name: value, type};
+    } else {
+      normalized[key] = {name: value?.name || key, type: value?.type || "movie"};
+    }
+  }
+  categoriesConfig = normalized;
 }
 
 async function _pollProgress(bar) {
