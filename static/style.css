@@ -1014,8 +1014,9 @@ mark{background:transparent;color:var(--accent);font-weight:800}
 .hero{
   position:relative;height:480px;
   border-radius:var(--radius-xl);
-  overflow:hidden;margin-bottom:28px;
+  margin-bottom:28px;
   border:1px solid var(--line);
+  background:var(--panel2);
   animation:heroIn .5s ease both
 }
 @keyframes heroIn{
@@ -1023,23 +1024,26 @@ mark{background:transparent;color:var(--accent);font-weight:800}
   to{opacity:1;transform:translateY(0) scale(1)}
 }
 
+/* Full-page backdrop — fixed behind everything */
 .hero-backdrop{
-  position:absolute;inset:0;
+  position:fixed;inset:0;z-index:-2;
   background-size:cover;background-position:center 20%;
-  transition:transform .6s ease,filter .6s ease
+  transition:filter .6s ease;
+  will-change:transform
 }
-.hero:hover .hero-backdrop{transform:scale(1.05)}
 
+/* Full-page gradient — sits above backdrop, below all content */
 .hero-gradient{
-  position:absolute;inset:0;
+  position:fixed;inset:0;z-index:-1;
+  pointer-events:none;
   background:
-    linear-gradient(to top,#0d0d0f 0%,rgba(13,13,15,.8) 35%,rgba(0,0,0,.4) 65%,transparent 100%),
-    linear-gradient(100deg,rgba(13,13,15,.6) 0%,transparent 60%);
-  z-index:1;pointer-events:none
+    linear-gradient(to top,rgba(13,13,15,.7) 0%,rgba(13,13,15,.35) 30%,rgba(0,0,0,.15) 60%,transparent 100%),
+    linear-gradient(100deg,rgba(13,13,15,.4) 0%,transparent 60%);
+  transition:opacity .4s ease
 }
 
 .hero-content{
-  position:relative;z-index:2;
+  position:relative;
   display:flex;flex-direction:column;justify-content:flex-end;
   height:100%;padding:36px 40px;
   pointer-events:none
