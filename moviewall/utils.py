@@ -159,7 +159,10 @@ def tmdb_request(endpoint, params, _retries=2):
     params["api_key"] = key
 
     from moviewall.config import read_json, write_json, METADATA_CACHE_FILE as _mcf
-    ck = f"tmdb:{endpoint}"
+    # Include all query params (except api_key) in cache key so different
+    # searches don't clobber each other's cached results
+    _cache_params = "&".join(f"{k}={v}" for k, v in sorted(params.items()) if k != "api_key")
+    ck = f"tmdb:{endpoint}:{_cache_params}"
     try:
         with cache_lock:
             cache = read_json(_mcf, {})

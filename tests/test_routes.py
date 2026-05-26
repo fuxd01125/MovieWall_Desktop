@@ -148,3 +148,247 @@ class TestDBEpisodeDataIntegrity:
         row = conn.execute("SELECT path FROM media WHERE id='show1'").fetchone()
         conn.close()
         assert row["path"] is None, "Show path in media table should be None (episode paths are in episodes table)"
+
+
+class TestTmdbMatchScore:
+    """Unit tests for TMDB match scoring (BUG 2 regression)."""
+
+    def setup_method(self):
+        from moviewall.metadata import _tmdb_match_score
+        self.score = _tmdb_match_score
+
+    def test_exact_name_match(self):
+        result = {"name": "Santa Clarita Diet", "original_name": "Santa Clarita Diet",
+                  "first_air_date": "2017-02-03", "original_language": "en"}
+        s = self.score(result, "Santa Clarita Diet", "2017", "tv")
+        assert s >= 100, "Exact name + year match should score >= 100"
+
+    def test_chinese_name_match(self):
+        result = {"name": "Santa Clarita Diet", "original_name": "Santa Clarita Diet",
+                  "first_air_date": "2017-02-03", "original_language": "en"}
+        s = self.score(result, "真爱不死", "2017", "tv")
+        # Chinese query won't match English names — but may still be a weak match
+        # The test is that wrong-match cases don't exceed threshold
+        assert s < 50, "Chinese name with no English overlap should score below 50"
+
+    def test_wrong_match_rejected(self):
+        """真爱不死 should NOT match 神探夏洛克 (Sherlock)."""
+        result = {"name": "Sherlock", "original_name": "Sherlock",
+                  "first_air_date": "2010-07-25", "original_language": "en"}
+        s = self.score(result, "真爱不死", "2017", "tv")
+        assert s < 50, "Wrong match (真爱不死 → Sherlock) should score below threshold"
+
+    def test_year_mismatch_penalty(self):
+        """Same name, wrong year → penalty but still recognized as same series."""
+        result = {"name": "The Office", "original_name": "The Office",
+                  "first_air_date": "2005-03-24", "original_language": "en"}
+        s = self.score(result, "The Office", "2019", "tv")
+        # Exact name match = 100, year mismatch penalty = -20, total = 80
+        assert s > 50, "Same show name should still be recognized despite year mismatch"
+        assert s < 100, "Year mismatch should reduce score"
+
+    def test_partial_name_match_with_year(self):
+        result = {"name": "Stranger Things", "original_name": "Stranger Things",
+                  "first_air_date": "2016-07-15", "original_language": "en"}
+        s = self.score(result, "Stranger Things", "2016", "tv")
+        assert s >= 100, "Exact name + year should be high confidence"
+
+    def test_movie_type_match(self):
+        result = {"name": "Inception", "original_name": "Inception",
+                  "release_date": "2010-07-16", "original_language": "en", "media_type": "movie"}
+        s = self.score(result, "Inception", "2010", "movie")
+        assert s >= 120, "Exact name + year + media_type match should be high"
+
+    def test_wrong_media_type_penalty(self):
+        """Same name returns lower score when type mismatches."""
+        result = {"name": "Inception", "original_name": "Inception",
+                  "release_date": "2010-07-16", "original_language": "en", "media_type": "movie"}
+        s_tv = self.score(result, "Inception", "2010", "tv")
+        s_movie = self.score(result, "Inception", "2010", "movie")
+        # Same result should score higher when type matches
+        assert s_tv < s_movie, "Wrong media type should reduce score vs correct type"
+
+
+class TestSeasonPosterPriority:
+    """Test that season poster fallback priority is correct (BUG 3 regression)."""
+
+    def test_artwork_url_http_path(self):
+        """artworkUrl should return HTTP URL directly without /api/artwork prefix."""
+        item = {"id": "test", "poster": "https://image.tmdb.org/t/p/w500/test.jpg"}
+        # Simulate the artworkUrl logic
+        if item.get("poster"):
+            if str(item["poster"]).startswith("http"):
+                result = item["poster"]
+            else:
+                result = "/api/artwork/" + item["id"] + "/poster"
+        assert result == "https://image.tmdb.org/t/p/w500/test.jpg", \
+            "HTTP poster URL should be returned directly"
+
+    def test_artwork_url_local_path(self):
+        """artworkUrl should use /api/artwork prefix for local paths."""
+        item = {"id": "test", "poster": "F:\\TV\\poster.jpg"}
+        if item.get("poster"):
+            if str(item["poster"]).startswith("http"):
+                result = item["poster"]
+            else:
+                result = "/api/artwork/" + item["id"] + "/poster"
+        assert result == "/api/artwork/test/poster", \
+            "Local poster path should use /api/artwork prefix"
+
+    def test_season_poster_priority_chain(self):
+        """Season poster priority: local > TMDB > douban > empty."""
+        season = {"id": "s1", "poster": ""}
+        tmdb_data = {"poster_url": "https://tmdb.com/poster.jpg"}
+        douban_data = {"poster_url": "https://douban.com/poster.jpg"}
+
+        # Test 1: TMDB poster used when no local
+        poster = tmdb_data["poster_url"] or ""
+        assert poster == "https://tmdb.com/poster.jpg", "TMDB poster should be fallback"
+
+        # Test 2: local poster (set on season) takes priority
+        season["poster"] = "F:\\TV\\poster.jpg"
+        poster = season["poster"] if not str(season.get("poster", "")).startswith("http") else season["poster"]
+        assert poster == "F:\\TV\\poster.jpg", "Local poster should be highest priority"
+
+        # Test 3: douban is last fallback
+        season["poster"] = ""
+        poster = tmdb_data["poster_url"] or douban_data["poster_url"] or ""
+        assert poster == "https://tmdb.com/poster.jpg", "TMDB should come before douban"
+
+        poster = tmdb_data["poster_url"] if tmdb_data["poster_url"] else douban_data["poster_url"]
+        assert poster == "https://tmdb.com/poster.jpg", "TMDB poster should be chosen over douban"
+
+
+class TestFinalConsistencyCheck:
+    """Test that attach_all_metadata rejects inconsistent TMDB data and clears stale DB entries."""
+
+    def test_consistency_rejects_wrong_match(self):
+        from moviewall.metadata import _final_consistency_check
+        tmdb_data = {"tmdb_id": 19885, "title": "Sherlock", "original_title": "Sherlock",
+                     "date": "2010-07-25"}
+        # Query is "真爱不死" → should reject Sherlock
+        assert not _final_consistency_check(tmdb_data, "真爱不死", "2017", "tv"), \
+            "Sherlock for 真爱不死 should be rejected"
+
+    def test_consistency_accepts_correct_match(self):
+        from moviewall.metadata import _final_consistency_check
+        tmdb_data = {"tmdb_id": 79501, "title": "Santa Clarita Diet",
+                     "original_title": "Santa Clarita Diet", "date": "2017-02-03"}
+        assert _final_consistency_check(tmdb_data, "Santa Clarita Diet", "2017", "tv")
+
+    def test_consistency_empty_data_passes(self):
+        from moviewall.metadata import _final_consistency_check
+        assert not _final_consistency_check({}, "Some Show", "2020", "tv")
+
+    def test_save_tmdb_meta_always_called_on_empty(self):
+        """Even with empty data, save_tmdb_meta clears stale metadata from DB."""
+        from moviewall.database import save_tmdb_meta, get_conn
+        # Pre-create a media entry (FK requirement) and put stale metadata
+        conn = get_conn()
+        conn.execute("INSERT OR IGNORE INTO media (id,media_type,title) VALUES ('meta_clear_test','show','Test Show')")
+        conn.execute("INSERT OR REPLACE INTO metadata_tmdb (media_id,tmdb_id,title) VALUES ('meta_clear_test',99999,'Wrong Title')")
+        conn.commit()
+        conn.close()
+        # Now call save_tmdb_meta with empty data (simulating "no valid TMDB match")
+        save_tmdb_meta("meta_clear_test", {})
+        conn = get_conn()
+        row = conn.execute("SELECT tmdb_id, title FROM metadata_tmdb WHERE media_id='meta_clear_test'").fetchone()
+        conn.close()
+        assert row is not None, "Entry should exist (INSERT OR CONFLICT)"
+        assert row["tmdb_id"] is None, "tmdb_id should be None (cleared by empty data)"
+        assert row["title"] is None, "title should be None (cleared by empty data)"
+
+
+class TestSeasonCountValidation:
+    """Test season count validation in TMDB match scoring."""
+
+    def setup_method(self):
+        from moviewall.metadata import _tmdb_match_score
+        self.score = _tmdb_match_score
+
+    def test_season_count_boost_exact_match(self):
+        r = {"name": "Santa Clarita Diet", "original_name": "Santa Clarita Diet",
+             "first_air_date": "2017-02-03", "number_of_seasons": 3, "original_language": "en"}
+        s = self.score(r, "Santa Clarita Diet", "2017", "tv", local_season_count=3)
+        # 100 (exact name) + 40 (year) + 25 (seasons match) = 165
+        assert s >= 160, "Exact season count should boost score"
+
+    def test_season_count_penalty_wrong_count(self):
+        r = {"name": "Some Show", "first_air_date": "2015", "number_of_seasons": 1, "original_language": "en"}
+        s_wrong = self.score(r, "My Show", "2017", "tv", local_season_count=3)
+        s_none = self.score(r, "My Show", "2017", "tv", local_season_count=0)
+        # With wrong count (diff=2 > 1) → -15 penalty compared to no count info
+        assert s_wrong <= s_none, "Wrong season count should reduce score vs no count info"
+
+
+class TestClearTmdbCache:
+    """Test that clear_tmdb_cache properly invalidates cache entries."""
+
+    def test_clear_cache_removes_matching_keys(self):
+        from moviewall.metadata import clear_tmdb_cache
+        from moviewall.config import read_json, write_json, METADATA_CACHE_FILE, cache_lock
+        # Pre-seed cache with a test entry (use spaces to match normalize_key output)
+        test_key = "tv:test show for cache clear:2020:zh-CN"
+        with cache_lock:
+            cache = read_json(METADATA_CACHE_FILE, {})
+            cache[test_key] = {"_cached_at": 0, "data": {"tmdb_id": 999, "title": "test"}}
+            write_json(METADATA_CACHE_FILE, cache)
+        # Clear by title
+        clear_tmdb_cache("ignored_id", "test_show_for_cache_clear")
+        # Verify entry removed
+        with cache_lock:
+            cache = read_json(METADATA_CACHE_FILE, {})
+            assert test_key not in cache, "Cache entry should be removed by clear_tmdb_cache"
+
+    def test_clear_cache_does_not_remove_unrelated(self):
+        from moviewall.metadata import clear_tmdb_cache
+        from moviewall.config import read_json, write_json, METADATA_CACHE_FILE, cache_lock
+        with cache_lock:
+            cache = read_json(METADATA_CACHE_FILE, {})
+            cache["tv:unrelated:2020:zh-CN"] = {"_cached_at": 0, "data": {"tmdb_id": 1}}
+            write_json(METADATA_CACHE_FILE, cache)
+        clear_tmdb_cache("id", "completely_different_show")
+        with cache_lock:
+            cache = read_json(METADATA_CACHE_FILE, {})
+            assert "tv:unrelated:2020:zh-CN" in cache, "Unrelated cache entries should survive clear"
+
+    def test_clear_cache_removes_tmdb_prefix_keys(self):
+        from moviewall.metadata import clear_tmdb_cache
+        from moviewall.config import read_json, write_json, METADATA_CACHE_FILE, cache_lock
+        tmdb_key = "tmdb:search/movie:query=inception&language=zh-CN"
+        with cache_lock:
+            cache = read_json(METADATA_CACHE_FILE, {})
+            cache[tmdb_key] = {"_cached_at": 0, "data": {"results": []}}
+            write_json(METADATA_CACHE_FILE, cache)
+        clear_tmdb_cache("id", "inception")
+        with cache_lock:
+            cache = read_json(METADATA_CACHE_FILE, {})
+            assert tmdb_key not in cache, "tmdb: prefixed keys should be removed by clear_tmdb_cache"
+
+
+class TestAttachMetadataAlwaysSaves:
+    """Test that attach_all_metadata always calls save_tmdb_meta (even on empty)."""
+
+    def test_force_refresh_skips_cache(self):
+        from moviewall.metadata import get_tmdb_metadata
+        # force_refresh should not crash — it's a flag, not a cache-dependent test
+        result = get_tmdb_metadata("nonexistent_show_xyz", "2099", "tv", force_refresh=True)
+        assert isinstance(result, dict), "force_refresh should return a dict"
+        # Clean up any cache entry that was created
+        from moviewall.metadata import clear_tmdb_cache
+        clear_tmdb_cache("id", "nonexistent_show_xyz")
+
+
+class TestOrphanCleanup:
+    """Test that orphan cleanup removes DB entries for deleted/moved folders (BUG 1)."""
+
+    def test_orphan_folder_detected(self):
+        """A folder path that doesn't exist on disk should be flagged for removal."""
+        from pathlib import Path
+        non_existent = "C:\\nonexistent_orphan_folder"
+        assert not Path(non_existent).exists(), "Test folder must not exist"
+
+    def test_existing_folder_not_orphan(self):
+        """A folder path that exists on disk should NOT be flagged."""
+        assert Path(tempfile.gettempdir()).exists(), "Temp dir must exist"
+

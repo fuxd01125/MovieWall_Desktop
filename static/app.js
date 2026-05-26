@@ -87,7 +87,10 @@ function douban(item) { return item?.metadata?.douban || {}; }
 
 function artworkUrl(item, kind="poster") {
   if (!item) return "";
-  if (item[kind]) return "/api/artwork/" + item.id + "/" + kind;
+  if (item[kind]) {
+    if (String(item[kind]).startsWith("http")) return item[kind];
+    return "/api/artwork/" + item.id + "/" + kind;
+  }
   if (item.type === "episode" && kind === "thumb") return "";
   const t = tmdb(item);
   if (kind === "poster" && t.poster_url) return t.poster_url;

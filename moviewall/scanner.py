@@ -13,7 +13,7 @@ from moviewall.utils import (
 from moviewall.artwork import find_movie_poster, find_show_poster, find_season_poster, find_episode_thumb
 from moviewall.metadata import attach_all_metadata
 from moviewall.database import (
-    upsert_media_batch, upsert_season_batch, upsert_episode_batch, delete_all_media,
+    upsert_media_batch, upsert_season_batch, upsert_episode_batch, delete_all_media, delete_media, get_conn,
 )
 
 
@@ -22,6 +22,43 @@ def _folder_mtime(folder):
         return folder.stat().st_mtime if folder.exists() else 0
     except OSError:
         return 0
+
+
+def _cleanup_orphaned_entries(scanned_items):
+    """Remove DB entries whose folder path no longer exists on disk.
+    Handles folder rename, move, and deletion scenarios.
+    Scanned items have 'folder' pointing to current paths; anything
+    in DB with a folder that doesn't exist is an orphan.
+    """
+    scanned_folders = set()
+    for item in scanned_items:
+        f = item.get("folder")
+        if f:
+            scanned_folders.add(str(Path(f).resolve()))
+    # Also include all episode-level folders from scanned shows
+    for item in scanned_items:
+        if item.get("type") == "show":
+            for season in item.get("seasons", []):
+                for ep in season.get("episodes", []):
+                    ef = ep.get("folder")
+                    if ef:
+                        scanned_folders.add(str(Path(ef).resolve()))
+
+    conn = get_conn()
+    try:
+        orphans = conn.execute("SELECT id, folder FROM media WHERE folder IS NOT NULL").fetchall()
+        for row in orphans:
+            folder = row["folder"]
+            folder_key = str(Path(folder).resolve()) if folder else ""
+            if folder_key and folder_key not in scanned_folders and not Path(folder_key).exists():
+                log.info("Removing orphan: %s (folder no longer exists: %s)", row["id"], folder_key)
+                conn.close()
+                delete_media(row["id"])
+                conn = get_conn()
+    except Exception:
+        pass
+    finally:
+        conn.close()
 
 
 def _scan_movies(folder, cat_key, cat_name):
@@ -238,6 +275,9 @@ def scan_library(progress_callback=None):
     stats["episodes"] = sum(
         len(s["episodes"]) for i in all_items if i["type"] == "show" for s in i.get("seasons", [])
     )
+
+    # Clean up orphans: remove DB entries whose folders no longer exist on disk
+    _cleanup_orphaned_entries(all_items)
 
     # Save scan mtime for incremental detection
     if full_rebuild:

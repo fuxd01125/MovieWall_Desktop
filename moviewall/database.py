@@ -394,7 +394,7 @@ def save_tmdb_meta(media_id, data):
                 tmdb_id=excluded.tmdb_id, title=excluded.title, original_title=excluded.original_title,
                 overview=excluded.overview, rating=excluded.rating, date=excluded.date,
                 genres=excluded.genres, poster_url=excluded.poster_url, backdrop_url=excluded.backdrop_url,
-                season_data=COALESCE(NULLIF(excluded.season_data,''),metadata_tmdb.season_data),
+                season_data=excluded.season_data,
                 raw=excluded.raw, fetched_at=excluded.fetched_at
         """, (
             media_id,

@@ -5,7 +5,7 @@ import threading
 import time
 from pathlib import Path
 
-from flask import abort, jsonify, render_template, request, send_file
+from flask import abort, jsonify, redirect, render_template, request, send_file
 
 from moviewall.config import load_config, write_json, CONFIG_FILE, load_players, normalize_categories
 from moviewall.log import log
@@ -162,11 +162,14 @@ def register_routes(app):
 
     @app.route("/api/update", methods=["POST"])
     def api_update_metadata():
-        """Force re-fetch TMDB + Douban metadata for all items without re-scanning files.
-        Note: This does NOT clear the metadata cache — DB-level UPSERT ensures old data
-        is preserved if TMDB/Douban are unreachable. To force a full cache refresh,
-        delete metadata_cache.json manually before calling this endpoint.
-        """
+        """Force re-fetch TMDB + Douban metadata for all items with full cache invalidation."""
+
+        def _clear_item_cache(item_id, item_title):
+            """Clear cached TMDB search results for this item from metadata_cache.json."""
+            from moviewall.metadata import clear_tmdb_cache
+            clear_tmdb_cache(item_id, item_title)
+            log.info("CLEAR CACHE: item=%s title=%s", item_id, item_title)
+
         def _run():
             global _scan_progress, _scan_lock
             from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -179,7 +182,12 @@ def register_routes(app):
                 if total > 0:
                     max_workers = min(5, total)
                     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                        futures = {pool.submit(attach_all_metadata, item): item for item in items}
+                        # First, clear all cache entries
+                        log.info("UPDATE: clearing metadata cache for %d items", total)
+                        for item in items:
+                            _clear_item_cache(item["id"], item.get("title", ""))
+                        # Then re-fetch metadata with force_refresh
+                        futures = {pool.submit(attach_all_metadata, item, True): item for item in items}
                         done = 0
                         for future in as_completed(futures):
                             done += 1
@@ -226,6 +234,9 @@ def register_routes(app):
                 conn2.close()
         if not art_path:
             abort(404)
+        # If artwork path is a remote URL, redirect instead of local file serving
+        if isinstance(art_path, str) and art_path.startswith("http"):
+            return redirect(art_path)
         p = Path(art_path)
         if not p.exists() or not p.is_file():
             abort(404)
@@ -415,7 +426,7 @@ def register_routes(app):
 
     @app.route("/api/update_single", methods=["POST"])
     def api_update_single():
-        """Re-fetch metadata for a single item (optionally with a custom douban_id)."""
+        """Re-fetch metadata for a single item with full cache invalidation."""
         data = request.get_json(force=True)
         media_id = data.get("media_id", "").strip()
         douban_id = data.get("douban_id", "").strip()
@@ -425,14 +436,12 @@ def register_routes(app):
         if douban_id:
             set_douban_id_override(media_id, douban_id)
 
-        # Note: No cache clearing here. The DB-level UPSERT in attach_all_metadata
-        # ensures old data is preserved if TMDB/Douban are unreachable.
-        # Cache entries naturally expire based on metadata_cache_days TTL.
-
-        # Don't delete DB metadata here — attach_all_metadata uses UPSERT
-        # (INSERT ON CONFLICT DO UPDATE), so old data survives if re-fetch fails.
         item = find_media_by_id(media_id)
         if item:
-            attach_all_metadata(item)
+            from moviewall.metadata import clear_tmdb_cache
+            clear_tmdb_cache(media_id, item.get("title", ""))
+            log.info("UPDATE SINGLE: clearing cache for %s (%s)", media_id, item.get("title"))
+            # force_refresh=True ensures old cache is bypassed
+            attach_all_metadata(item, force_refresh=True)
 
         return jsonify({"ok": True, "media_id": media_id})
