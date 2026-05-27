@@ -791,24 +791,24 @@ main {
   to { transform: scale(1.07) translate3d(-1%, .6%, 0); }
 }
 
-/* Gradient overlay: full 100vh — deeper, darker for text readability.
-   Horizontal layer is heavier on left for title readability. */
+/* Gradient overlay: 120vh to cover hero fully with smooth falloff.
+   Left-heavy for title readability. */
 .page-backdrop-overlay {
   position: absolute;
   inset: 0;
   background:
     linear-gradient(to bottom,
-      rgba(10,10,12, 0.15) 0%,
-      rgba(10,10,12, 0.25) 15%,
-      rgba(10,10,12, 0.45) 35%,
-      rgba(10,10,12, 0.70) 55%,
-      rgba(10,10,12, 0.88) 75%,
+      rgba(10,10,12, 0.10) 0%,
+      rgba(10,10,12, 0.22) 18%,
+      rgba(10,10,12, 0.40) 38%,
+      rgba(10,10,12, 0.65) 55%,
+      rgba(10,10,12, 0.85) 72%,
       #0a0a0c 100%),
     linear-gradient(to right,
-      rgba(10,10,12, 0.95) 0%,
-      rgba(10,10,12, 0.60) 35%,
-      rgba(10,10,12, 0.15) 60%,
-      rgba(10,10,12, 0.55) 100%);
+      rgba(10,10,12, 0.92) 0%,
+      rgba(10,10,12, 0.55) 30%,
+      rgba(10,10,12, 0.10) 55%,
+      rgba(10,10,12, 0.50) 100%);
 }
 
 /* =================================================================
@@ -1105,10 +1105,11 @@ main {
 .detail-hero {
   position: relative;
   z-index: 1;
-  min-height: 480px;
+  min-height: 520px;
   margin-top: 0;
   border: none;
   background: transparent;
+  padding-bottom: 0;
 }
 
 .cinematic-detail {
@@ -1118,35 +1119,36 @@ main {
   border-right: 0;
 }
 
-/* Content grid — poster floats in hero, info sits beside it */
+/* Content grid — unified hero: poster aligns with title top (F-flow) */
 .detail-content {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(180px, 260px) 1fr;
-  gap: 40px;
-  align-items: end;
-  min-height: 520px;
-  padding: 80px 48px 48px;
+  grid-template-columns: minmax(200px, 280px) 1fr;
+  gap: 36px;
+  align-items: start;
+  min-height: 440px;
+  padding: 100px 48px 40px;
 }
 
 .detail-content,
 .detail-info { overflow: visible; }
 
-/* Poster in detail — floated, lifted, with generous shadow */
+/* Poster — sits naturally at top, no translateY offset */
 .detail-poster {
   overflow: hidden;
   border-radius: var(--radius);
   background: var(--surface);
   aspect-ratio: 2/3;
-  box-shadow: 0 8px 40px rgba(0,0,0,.6), 0 2px 12px rgba(0,0,0,.4);
-  transform: translateY(16px);
+  box-shadow: 0 8px 36px rgba(0,0,0,.55);
   transition: transform .3s ease, box-shadow .3s ease;
+  position: sticky;
+  top: 100px;
 }
 
 .detail-poster:hover {
-  transform: translateY(12px);
-  box-shadow: 0 12px 56px rgba(0,0,0,.7), 0 4px 16px rgba(0,0,0,.4);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 48px rgba(0,0,0,.65);
 }
 
 .detail-poster img {
@@ -2351,26 +2353,49 @@ mark {
 }
 
 /* =================================================================
-   PERSON DETAIL PAGE — compact, dark, modern
+   PERSON DETAIL PAGE — back button as independent top nav,
+   actor hero unified below
    ================================================================= */
+
+.person-page {
+  position: relative;
+  padding-top: 0;
+}
+
+.person-nav {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 12px 24px 0;
+}
+
+.person-nav .back-hero-btn {
+  position: relative;
+  top: auto;
+  left: auto;
+}
 
 .person-detail {
   position: relative;
-  padding: 60px 24px 0 72px;
+  z-index: 1;
+  padding: 20px 48px 0;
+  max-width: 960px;
 }
 
 .person-hero {
   display: flex;
-  gap: 28px;
+  gap: 32px;
   align-items: flex-start;
 }
 
 .person-poster {
-  width: 160px;
-  min-width: 160px;
+  width: 180px;
+  min-width: 180px;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 6px 28px rgba(0,0,0,.5);
+  box-shadow: 0 8px 32px rgba(0,0,0,.5);
   flex-shrink: 0;
 }
 
@@ -2383,19 +2408,20 @@ mark {
 .person-info {
   flex: 1;
   min-width: 0;
-  max-width: 640px;
+  max-width: 600px;
 }
 
 .person-info h1 {
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 700;
-  margin: 0 0 4px;
+  margin: 0 0 6px;
+  line-height: 1.2;
 }
 
 .person-original-name {
   font-size: 14px;
   color: rgba(255,255,255,.45);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .person-dept {
@@ -2405,13 +2431,13 @@ mark {
   border-radius: 20px;
   background: rgba(255,255,255,.06);
   color: rgba(255,255,255,.5);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .person-meta {
   font-size: 13px;
   color: var(--text);
-  margin: 3px 0;
+  margin: 4px 0;
 }
 
 .person-meta .meta-label {
@@ -2422,17 +2448,18 @@ mark {
 .person-aka {
   font-size: 12px;
   color: rgba(255,255,255,.4);
-  margin: 6px 0;
+  margin: 8px 0;
 }
 
 .person-bio {
   font-size: 13px;
   line-height: 1.7;
   color: rgba(255,255,255,.6);
-  margin-top: 10px;
-  max-height: 240px;
+  margin-top: 12px;
+  max-height: 260px;
   overflow-y: auto;
   max-width: 600px;
+  padding-right: 8px;
 }
 
 .person-role {

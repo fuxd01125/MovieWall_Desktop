@@ -147,10 +147,14 @@ function renderPersonDetail(data) {
   const aka = data.also_known_as && data.also_known_as.length
     ? '<div class="person-aka">又名: ' + data.also_known_as.map(n => escapeHtml(n)).join(' / ') + '</div>' : '';
 
-  let bioHtml = '<section class="section person-detail">'
+  // Independent top nav bar
+  const nav = '<div class="person-nav">'
     + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回">'
     + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
-    + '</button>'
+    + '</button></div>';
+
+  // Hero section — avatar + info in unified area
+  let hero = '<div class="person-detail">'
     + '<div class="person-hero">'
     + '<div class="person-poster">' + img + '</div>'
     + '<div class="person-info">'
@@ -161,12 +165,13 @@ function renderPersonDetail(data) {
     + (data.place_of_birth ? '<div class="person-meta"><span class="meta-label">出生地</span> ' + escapeHtml(data.place_of_birth) + '</div>' : '')
     + aka
     + (data.biography ? '<div class="person-bio">' + escapeHtml(data.biography) + '</div>' : '')
-    + '</div></div></section>';
+    + '</div></div></div>';
 
   // Works section
   const works = data.works || [];
+  let worksHtml = '';
   if (works.length) {
-    bioHtml += '<section class="section"><div class="section-header"><h2>本地作品</h2><small>' + works.length + ' 部</small></div>'
+    worksHtml = '<section class="section"><div class="section-header"><h2>本地作品</h2><small>' + works.length + ' 部</small></div>'
       + '<div class="grid">'
       + works.map(w => {
         const item = findItem(w.media_id);
@@ -187,7 +192,7 @@ function renderPersonDetail(data) {
       + '</div></section>';
   }
 
-  app.innerHTML = bioHtml;
+  app.innerHTML = nav + '<div class="person-page">' + hero + worksHtml + '</div>';
 }
 
 function startHistoryPolling() {
