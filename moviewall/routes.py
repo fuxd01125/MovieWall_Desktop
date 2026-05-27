@@ -427,15 +427,16 @@ def register_routes(app):
             person_dict.pop("raw", None)
             person_dict.pop("updated_at", None)
 
-            # Credits joined with media for works list
+            # Credits joined with media for works list — deduplicate by media_id
             works = conn.execute("""
-                SELECT DISTINCT c.scope, c.character, c.job, c.department,
+                SELECT c.scope, c.character, c.job, c.department,
                        m.id as media_id, m.title as media_title, m.media_type,
                        m.poster, m.year,
                        COALESCE(m.display_title, m.title) as display_title
                 FROM credits c
                 JOIN media m ON m.id = c.media_id
                 WHERE c.person_id = ?
+                GROUP BY m.id
                 ORDER BY m.title COLLATE NOCASE
             """, (person_id,)).fetchall()
             person_dict["works"] = [dict(w) for w in works]

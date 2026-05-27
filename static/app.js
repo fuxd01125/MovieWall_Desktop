@@ -826,11 +826,15 @@ function renderDoubanTags(item) {
   const abstract_2 = d.abstract_2 || "";
   const cast = creditsCast(item);
   if (!abstract && !abstract_2 && !cast.length) return '';
+  // Skip douban abstract parts that already appear as TMDB genres
+  const t = tmdb(item);
+  const existingGenres = (t.genres || []).map(g => g.toLowerCase());
   let tags = [];
   if (abstract) {
     abstract.split(' / ').forEach(part => {
       part = part.trim();
       if (!part) return;
+      if (existingGenres.includes(part.toLowerCase())) return;
       if (/^\d+分钟$/.test(part)) {
         tags.push('<span class="genre-tag douban-tag runtime">' + escapeHtml(part) + '</span>');
       } else {
@@ -893,7 +897,7 @@ function renderMovieDetail(item) {
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
     + renderDoubanTags(item)
-    + (overview ? '<div class="overview-wrap"><div class="overview full">' + escapeHtml(overview) + '</div></div>' : '')
+    + (overview ? '<div class="overview-wrap"><div class="overview" id="overview-' + item.id + '">' + escapeHtml(overview) + '</div><button class="overview-toggle" onclick="toggleOverview(\'' + item.id + '\',event)">展开</button></div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
@@ -902,6 +906,17 @@ function renderMovieDetail(item) {
     + renderCastSection(cast);
 
   app.innerHTML = detailHero(item, body);
+}
+
+function toggleOverview(id, event) {
+  if (event) event.stopPropagation();
+  const el = document.getElementById("overview-" + id);
+  if (!el) return;
+  const isExpanded = el.classList.toggle("expanded");
+  const btn = el.nextElementSibling;
+  if (btn && btn.classList.contains("overview-toggle")) {
+    btn.textContent = isExpanded ? "收起" : "展开";
+  }
 }
 
 function renderShowDetail(item) {
@@ -926,7 +941,7 @@ function renderShowDetail(item) {
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
     + renderDoubanTags(item)
-    + (overview ? '<div class="overview-wrap"><div class="overview full">' + escapeHtml(overview) + '</div></div>' : '')
+    + (overview ? '<div class="overview-wrap"><div class="overview" id="overview-' + item.id + '">' + escapeHtml(overview) + '</div><button class="overview-toggle" onclick="toggleOverview(\'' + item.id + '\',event)">展开</button></div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '')
