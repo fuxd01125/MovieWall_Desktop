@@ -105,6 +105,91 @@ async function _pollHistory() {
   } catch (e) { /* ignore poll errors */ }
 }
 
+/* ===== Cast Section ===== */
+
+function renderCastSection(cast) {
+  if (!cast || !cast.length) return '';
+  return '<section class="section cast-section">'
+    + '<div class="section-header"><h2>演员</h2><small>' + cast.length + ' 人</small></div>'
+    + '<div class="row-shell"><div class="row-scroll cast-scroll">'
+    + cast.map(c => {
+      const p = c.person || {};
+      const img = p.profile_url
+        ? '<img src="' + p.profile_url + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'cast-avatar-placeholder\\\'>' + escapeHtml((p.name || '?')[0]) + '</div>\'">'
+        : '<div class="cast-avatar-placeholder">' + escapeHtml((p.name || '?')[0]) + '</div>';
+      return '<article class="cast-card" onclick="openPerson(\'' + escapeJs(p.id || '') + '\')">'
+        + '<div class="cast-avatar">' + img + '</div>'
+        + '<div class="cast-info">'
+        + '<div class="cast-name">' + escapeHtml(p.name || '') + '</div>'
+        + '<div class="cast-role">' + escapeHtml(c.character || c.job || '') + '</div>'
+        + '</div></article>';
+    }).join('')
+    + '</div></div></section>';
+}
+
+async function openPerson(personId) {
+  if (!personId) return;
+  showSkeleton();
+  const res = await fetch("/api/person/" + encodeURIComponent(personId));
+  if (!res.ok) { showToast("演员信息未能加载", 3000); goHome(); return; }
+  const data = await res.json();
+  navigateTo({type:"person", data});
+}
+
+function renderPersonDetail(data) {
+  currentView = {type:"person", data};
+  renderCategoryTabs();
+  renderBreadcrumb();
+
+  const img = data.profile_url
+    ? '<img src="' + data.profile_url + '" loading="lazy">'
+    : '<div class="placeholder">' + escapeHtml((data.name || '?')[0]) + '</div>';
+  const aka = data.also_known_as && data.also_known_as.length
+    ? '<div class="person-aka">又名: ' + data.also_known_as.map(n => escapeHtml(n)).join(' / ') + '</div>' : '';
+
+  let bioHtml = '<section class="section person-detail">'
+    + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回">'
+    + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
+    + '</button>'
+    + '<div class="person-hero">'
+    + '<div class="person-poster">' + img + '</div>'
+    + '<div class="person-info">'
+    + '<h1>' + escapeHtml(data.name || '') + '</h1>'
+    + (data.original_name && data.original_name !== data.name ? '<div class="person-original-name">' + escapeHtml(data.original_name) + '</div>' : '')
+    + (data.known_for_department ? '<div class="person-dept">' + escapeHtml(data.known_for_department) + '</div>' : '')
+    + (data.birthday ? '<div class="person-meta"><span class="meta-label">出生</span> ' + escapeHtml(data.birthday) + (data.deathday ? ' — ' + escapeHtml(data.deathday) : '') + '</div>' : '')
+    + (data.place_of_birth ? '<div class="person-meta"><span class="meta-label">出生地</span> ' + escapeHtml(data.place_of_birth) + '</div>' : '')
+    + aka
+    + (data.biography ? '<div class="person-bio">' + escapeHtml(data.biography) + '</div>' : '')
+    + '</div></div></section>';
+
+  // Works section
+  const works = data.works || [];
+  if (works.length) {
+    bioHtml += '<section class="section"><div class="section-header"><h2>本地作品</h2><small>' + works.length + ' 部</small></div>'
+      + '<div class="grid">'
+      + works.map(w => {
+        const item = findItem(w.media_id);
+        const poster = item ? artworkUrl(item, "poster") : '';
+        const title = w.display_title || w.media_title || '';
+        const role = w.character ? '饰 ' + w.character : (w.job || w.department || '');
+        return '<article class="card" onclick="openDetail(\'' + escapeJs(w.media_id) + '\')">'
+          + '<div class="card-poster">'
+          + (poster
+            ? '<img src="' + poster + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder\\\'>' + escapeHtml(title) + '</div>\'">'
+            : '<div class="placeholder">' + escapeHtml(title) + '</div>')
+          + '</div>'
+          + '<div class="card-body">'
+          + '<h4 class="card-title">' + escapeHtml(title) + '</h4>'
+          + (role ? '<div class="person-role">' + escapeHtml(role) + '</div>' : '')
+          + '</div></article>';
+      }).join('')
+      + '</div></section>';
+  }
+
+  app.innerHTML = bioHtml;
+}
+
 function startHistoryPolling() {
   if (historyPollInterval) return;
   historyPollInterval = setInterval(_pollHistory, 3000);
@@ -318,6 +403,9 @@ function renderRoute(view) {
     const season = (show?.seasons || []).find(s => Number(s.season_number) === Number(view.seasonNumber));
     if (!show || !season) return renderHome();
     return renderSeasonDetail(show, season);
+  }
+  if (view.type === "person") {
+    return renderPersonDetail(view.data);
   }
 }
 
@@ -602,6 +690,8 @@ function renderContinueCard(entry) {
   const title = hist.show_title || hist.title || titleOf(item);
   const label = hist.short_label || hist.label || "";
   const isShow = item.type === "show";
+  // Episode context: if hist has episode_number/season_number, show it
+  const epContext = hist.season_number ? 'S' + String(hist.season_number).padStart(2,'0') + 'E' + String(hist.episode_number || 0).padStart(2,'0') : label;
   let progressPct = 0;
   if (isShow) {
     const totalEps = item.episode_count || 0;
@@ -609,7 +699,7 @@ function renderContinueCard(entry) {
       sum + (s.episodes || []).filter(ep => historyCache[ep.id]).length, 0);
     progressPct = totalEps ? Math.round(watchedEps / totalEps * 100) : 0;
   }
-  const histEntry = "{media_id:'" + item.id + "',type:'" + item.type + "',path:'" + escapeJs(hist.path) + "',title:'" + escapeJs(title) + "',show_title:'" + escapeJs(hist.show_title || title) + "',label:'" + escapeJs(hist.label || "") + "',short_label:'" + escapeJs(hist.short_label || "") + "'}";
+  const histEntry = "{media_id:'" + item.id + "',type:'" + item.type + "',path:'" + escapeJs(hist.path) + "',title:'" + escapeJs(title) + "',show_title:'" + escapeJs(hist.show_title || title) + "',label:'" + escapeJs(epContext) + "',short_label:'" + escapeJs(epContext) + "'}";
   const t = tmdb(item);
   const d = douban(item);
   const score = d.rating || t.rating || "";
@@ -621,13 +711,15 @@ function renderContinueCard(entry) {
       : '<div class="placeholder">' + escapeHtml(title) + '</div>')
     + '<div class="card-overlay">'
     + '<div class="poster-actions"><button class="poster-play" onclick="event.stopPropagation();playMedia(\'' + escapeJs(hist.path) + '\',' + histEntry + ')" title="继续播放">▶</button><button class="poster-info" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')" title="详情">i</button></div>'
-    + '<div class="card-meta"><span class="rating-badge sm">' + escapeHtml(label) + '</span></div>'
+    + '<div class="card-meta"><span class="rating-badge sm">' + escapeHtml(epContext) + '</span></div>'
     + '<div class="card-overlay-title">' + escapeHtml(title) + '</div>'
     + '<div class="card-overlay-subtitle">继续观看</div>'
     + '</div>'
     + (progressPct > 0 ? '<div class="card-progress"><div class="card-progress-bar" style="width:' + progressPct + '%"></div></div>' : '')
     + '</div>'
-    + '<div class="card-body"><div class="continue-kicker">▶ 继续观看</div><h4 class="card-title">' + escapeHtml(title) + '</h4></div>'
+    + '<div class="card-body">'
+    + '<div class="continue-kicker">▶ ' + escapeHtml(isShow ? epContext : '继续观看') + '</div>'
+    + '<h4 class="card-title">' + escapeHtml(title) + '</h4></div>'
     + '</article>';
 }
 
@@ -793,6 +885,7 @@ function renderMovieDetail(item) {
   const hist = getItemHistory(item);
   const entry = "{media_id:'" + item.id + "',type:'movie',path:'" + escapeJs(item.path) + "',title:'" + escapeJs(titleOf(item)) + "',show_title:'" + escapeJs(titleOf(item)) + "',label:'电影',short_label:'电影'}";
   const d = douban(item);
+  const cast = (item.metadata?.credits?.cast || []).filter(c => c.person?.id);
   const more = moreMenuHtml(item, '<button onclick="openFolder(\'' + escapeJs(item.folder) + '\')">打开文件夹</button><button onclick="updateSingleItem(\'' + item.id + '\')">更新此项目</button><button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(d.douban_id || "") + '\')">' + (d.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>');
 
   const body = '<h1>' + escapeHtml(titleOf(item)) + '</h1>'
@@ -805,7 +898,8 @@ function renderMovieDetail(item) {
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
     + more
-    + '</div>';
+    + '</div>'
+    + renderCastSection(cast);
 
   app.innerHTML = detailHero(item, body);
 }
@@ -825,6 +919,7 @@ function renderShowDetail(item) {
   const more = moreMenuHtml(item, moreActions);
   const firstEp = findFirstEpisode(item);
   const firstEntry = firstEp ? episodeEntry(item, firstEp.season, firstEp.ep, firstEp.season.title + " · " + firstEp.ep.title) : "";
+  const cast = (item.metadata?.credits?.cast || []).filter(c => c.person?.id);
 
   const body = '<h1>' + escapeHtml(titleOf(item)) + '</h1>'
     + (origTitle ? '<div class="detail-subtitle">' + escapeHtml(origTitle) + '</div>' : '')
@@ -838,7 +933,8 @@ function renderShowDetail(item) {
     + (firstEntry ? '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(firstEp.ep.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '')
     + '<button class="cta-btn secondary' + (isFavorite(item.id) ? ' favorited' : '') + '" onclick="event.stopPropagation();toggleFavorite(\'' + item.id + '\')">' + (isFavorite(item.id) ? '♥' : '♡') + ' 收藏</button>'
     + more
-    + '</div>';
+    + '</div>'
+    + renderCastSection(cast);
 
   const isExpanded = (snum) => expandedSeason === item.id + "|" + snum;
   const seasonCards = (item.seasons || []).map((s, i) => renderSeasonCard(item, s, isExpanded(s.season_number)));
@@ -1040,13 +1136,18 @@ function renderEpisodeCard(show, season, ep) {
   const label = season.title + " · " + ep.title;
   const entry = episodeEntry(show, season, ep, label);
   const epHist = historyCache[ep.id];
-  const thumbSrc = ep.still_url || ep.metadata?.tmdb?.still_url || artworkUrl(ep, "thumb") || artworkUrl(ep, "poster");
+  const epm = ep.metadata?.tmdb || {};
+  const stillSrc = epm.still_url || artworkUrl(ep, "thumb") || artworkUrl(ep, "poster");
   const epNum = "S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0");
+  const epName = epm.title || ep.title || ep.filename || epNum;
+  const epOverview = epm.overview || ep.overview || "";
+  const epRating = epm.rating ? '<span class="ep-badge rating-badge sm">★ ' + Number(epm.rating).toFixed(1) + '</span>' : '';
+  const epRuntime = epm.runtime ? '<span class="ep-badge">' + epm.runtime + '分钟</span>' : '';
 
   return '<div class="episode-row' + (active ? ' active-episode' : '') + '" onclick="playMedia(\'' + escapeJs(ep.path) + '\',' + entry + ')">'
     + '<div class="episode-row-thumb">'
-    + (thumbSrc
-      ? '<img src="' + thumbSrc + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder episode-placeholder\\\'>' + escapeHtml(epNum) + '</div>\'">'
+    + (stillSrc
+      ? '<img src="' + stillSrc + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder episode-placeholder\\\'>' + escapeHtml(epNum) + '</div>\'">'
       : '<div class="placeholder episode-placeholder">' + escapeHtml(epNum) + '</div>')
     + '<div class="play-badge"><span>▶</span></div>'
     + '</div>'
@@ -1054,9 +1155,10 @@ function renderEpisodeCard(show, season, ep) {
     + '<div class="episode-row-body">'
     + '<div class="episode-row-top">'
     + '<span class="episode-row-num' + (active ? ' active-num' : '') + '">' + epNum + '</span>'
-    + '<span class="episode-row-title">' + escapeHtml(ep.title || ep.filename) + '</span>'
+    + '<span class="episode-row-title">' + escapeHtml(epName) + '</span>'
+    + '<span class="episode-row-meta">' + epRating + epRuntime + '</span>'
     + '</div>'
-    + '<div class="episode-row-overview">' + escapeHtml(ep.overview || ep.filename || "") + '</div>'
+    + (epOverview ? '<div class="episode-row-overview">' + escapeHtml(epOverview) + '</div>' : '')
     + (epHist ? '<div class="episode-row-progress"><div class="bar" style="width:100%"></div></div>' : '')
     + '</div>'
 
