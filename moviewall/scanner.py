@@ -143,8 +143,63 @@ def _scan_single_movie(subfolder, cat_key, cat_name, videos=None):
     }
 
 
+def _rebuild_show_episodes(show_id, show_title, new_seasons, new_episodes):
+    """Full rebuild: delete old season/episode data for this show, then insert new.
+    This ensures the database always matches the disk — no orphan seasons, no stale data."""
+    conn = get_conn()
+    try:
+        # Read old season numbers for logging
+        old_rows = conn.execute(
+            "SELECT season_number, title, folder FROM seasons WHERE show_id=?", (show_id,)
+        ).fetchall()
+        old_seasons = {r["season_number"] for r in old_rows}
+        new_season_nums = {s["season_number"] for s in new_seasons}
+
+        # Log orphan deletions
+        for old_sn in sorted(old_seasons):
+            if old_sn not in new_season_nums:
+                old_row = next((r for r in old_rows if r["season_number"] == old_sn), None)
+                old_title = old_row["title"] if old_row else f"Season {old_sn}"
+                log.info("[REMOVE ORPHAN SEASON] show=%s season=%s title=%s reason=folder_no_longer_exists",
+                         show_title, old_sn, old_title)
+
+        # Delete ALL old seasons + episodes for this show
+        conn.execute("DELETE FROM episodes WHERE show_id=?", (show_id,))
+        conn.execute("DELETE FROM seasons WHERE show_id=?", (show_id,))
+        conn.execute("DELETE FROM metadata_douban_seasons WHERE show_id=?", (show_id,))
+
+        # Insert new data
+        if new_seasons:
+            for s in new_seasons:
+                conn.execute("""
+                    INSERT INTO seasons (id,show_id,season_number,title,folder,poster,episode_count)
+                    VALUES (?,?,?,?,?,?,?)
+                """, (
+                    s["id"], show_id, s.get("season_number"), s.get("title"),
+                    s.get("folder"), s.get("poster"), s.get("episode_count", 0)
+                ))
+        if new_episodes:
+            for ep in new_episodes:
+                conn.execute("""
+                    INSERT INTO episodes (id,show_id,season_id,season_number,episode_number,title,filename,path,folder,thumb)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                """, (
+                    ep["id"], show_id, ep.get("season_id"),
+                    ep.get("season_number"), ep.get("episode_number"),
+                    ep.get("title"), ep.get("filename"), ep.get("path"),
+                    ep.get("folder"), ep.get("thumb")
+                ))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def _scan_single_show(show_folder, cat_key, cat_name):
-    """Scan a single TV show folder (with season detection). Returns show item dict or None."""
+    """Scan a single TV show folder (with season detection). Returns show item dict or None.
+    Uses full rebuild for season/episode data: old disk entries are purged so DB matches disk exactly."""
     season_dirs = _detect_season_folders(show_folder)
     show_title = clean_title(show_folder.name)
     show_year = parse_year(show_folder.name)
@@ -210,27 +265,43 @@ def _scan_single_show(show_folder, cat_key, cat_name):
             ep["season_id"] = s["id"]
             all_episodes.append(ep)
 
+    # Upsert show metadata
     upsert_media_batch([show_item])
-    if all_seasons:
-        upsert_season_batch(all_seasons)
-    if all_episodes:
-        upsert_episode_batch(all_episodes)
+    # Full rebuild of seasons + episodes: delete old, insert new
+    _rebuild_show_episodes(show_id, show_title, all_seasons, all_episodes)
     return show_item
 
 
 def _detect_season_folders(show_folder):
     """Detect season subdirectories supporting both English and Chinese naming.
+    Supports: Season 1/19/26, S01/19/26, 第1/19/26季, 第一/二十六季.
+    Also supports mixed format: 剧名 S01, 剧名 第1季.
     Returns list of Path objects. Falls back to show_folder itself if no season dirs found.
     """
+    show_name = show_folder.name
     season_dirs = []
     for p in show_folder.iterdir():
         if not p.is_dir():
             continue
+        # English: Season 1, Season 26
         if re.search(r"Season\s*\d+", p.name, flags=re.I):
+            sn = parse_season_number(p.name)
+            log.info("[SEASON DETECT] show=%s season=%d matched=%s", show_name, sn, p.name)
             season_dirs.append(p)
+        # Chinese numeric: 第1季, 第26季
         elif re.search(r"第\s*\d+\s*季", p.name):
+            sn = parse_season_number(p.name)
+            log.info("[SEASON DETECT] show=%s season=%d matched=%s", show_name, sn, p.name)
             season_dirs.append(p)
-        elif re.search(r"第\s*[一二三四五六七八九十]+\s*季", p.name):
+        # Chinese ideographic: 第一季, 第二十六季
+        elif re.search(r"第\s*[一二三四五六七八九十百零]+\s*季", p.name):
+            sn = parse_season_number(p.name)
+            log.info("[SEASON DETECT] show=%s season=%d matched=%s", show_name, sn, p.name)
+            season_dirs.append(p)
+        # Short form: S01, S19, S26 (any digit length)
+        elif re.search(r"[Ss]\d+", p.name):
+            sn = parse_season_number(p.name)
+            log.info("[SEASON DETECT] show=%s season=%d matched=%s", show_name, sn, p.name)
             season_dirs.append(p)
     if not season_dirs:
         season_dirs = [show_folder]

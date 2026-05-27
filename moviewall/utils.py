@@ -69,7 +69,21 @@ def parse_year(text: str):
     return m.group(0).strip("()") if m else ""
 
 
-_CN_NUM_SEASON = {"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"十":10}
+def _chinese_num_to_int(text):
+    """Convert Chinese numeral string to integer. Supports 一 through 九十九."""
+    _NUMS = {"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"零":0}
+    if not text:
+        return 0
+    if text in _NUMS:
+        return _NUMS[text]
+    # Compound numbers like 十一, 二十, 二十一, 九十九
+    if "十" in text:
+        parts = text.split("十")
+        tens = _NUMS.get(parts[0], 1) if parts[0] else 1
+        ones = _NUMS.get(parts[1], 0) if len(parts) > 1 and parts[1] else 0
+        return tens * 10 + ones
+    return 0
+
 
 def parse_season_number(text: str):
     s = str(text)
@@ -79,10 +93,10 @@ def parse_season_number(text: str):
     m = re.search(r"第\s*(\d+)\s*季", s)
     if m:
         return int(m.group(1))
-    m = re.search(r"第\s*([一二三四五六七八九十]+)\s*季", s)
+    m = re.search(r"第\s*([一二三四五六七八九十百零]+)\s*季", s)
     if m:
-        return _CN_NUM_SEASON.get(m.group(1), 1)
-    m = re.search(r"[Ss](\d{1,2})", s)
+        return _chinese_num_to_int(m.group(1))
+    m = re.search(r"[Ss](\d+)", s)
     if m:
         return int(m.group(1))
     return 1
