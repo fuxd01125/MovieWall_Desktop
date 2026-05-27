@@ -144,6 +144,9 @@ function escapeJs(s) {
 function titleOf(item) { return item?.display_title || item?.title || item?.filename || "未命名"; }
 function tmdb(item) { return item?.metadata?.tmdb || {}; }
 function douban(item) { return item?.metadata?.douban || {}; }
+function seasonTmdb(season) { return season?.metadata?.tmdb || season?.tmdb || {}; }
+function seasonDouban(season) { return season?.metadata?.douban || season?.douban || {}; }
+function creditsCast(item) { return item?.metadata?.credits?.cast || []; }
 
 function artworkUrl(item, kind="poster") {
   if (!item) return "";
@@ -729,7 +732,8 @@ function renderDoubanTags(item) {
   const d = douban(item);
   const abstract = d.abstract || "";
   const abstract_2 = d.abstract_2 || "";
-  if (!abstract && !abstract_2) return '';
+  const cast = creditsCast(item);
+  if (!abstract && !abstract_2 && !cast.length) return '';
   let tags = [];
   if (abstract) {
     abstract.split(' / ').forEach(part => {
@@ -746,6 +750,8 @@ function renderDoubanTags(item) {
   if (tags.length) html += '<div class="genre-tags douban-tags">' + tags.join('') + '</div>';
   if (abstract_2) {
     html += '<div class="douban-cast"><span class="cast-label">演员</span> <span class="cast-names">' + escapeHtml(abstract_2.replace(/ \/ /g, ' · ')) + '</span></div>';
+  } else if (cast.length) {
+    html += '<div class="douban-cast"><span class="cast-label">演员</span> <span class="cast-names">' + escapeHtml(cast.slice(0, 8).map(c => c.person?.name).filter(Boolean).join(' · ')) + '</span></div>';
   }
   html += '</div>';
   return html;
@@ -872,10 +878,8 @@ function findFirstEpisode(show) {
 function renderSeasonCard(show, season, expanded) {
   const epWatched = season.episodes.filter(ep => historyCache[ep.id]).length;
   const progressPct = season.episode_count ? Math.round(epWatched / season.episode_count * 100) : 0;
-  const t = tmdb(show);
-  const sm = show._season_meta || {};
-  const sMeta = sm[String(season.season_number)] || {};
-  const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
+  const sMeta = seasonDouban(season);
+  const tmdbSeasonData = seasonTmdb(season);
   const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
   const seasonPoster = tmdbSeasonData.poster_url || sMeta.poster_url || artworkUrl(season, "poster") || "";
   const moreId = "smore-" + show.id + "-" + season.season_number;
@@ -908,10 +912,8 @@ function renderSeasonCard(show, season, expanded) {
 }
 
 function renderInlineEpisodes(show, season) {
-  const t = tmdb(show);
-  const sm = show._season_meta || {};
-  const sMeta = sm[String(season.season_number)] || {};
-  const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
+  const sMeta = seasonDouban(season);
+  const tmdbSeasonData = seasonTmdb(season);
   const seasonSynopsis = sMeta.synopsis || tmdbSeasonData.overview || "";
   const seasonPoster = tmdbSeasonData.poster_url || sMeta.poster_url || artworkUrl(season, "poster") || "";
   let detailHtml = '';
@@ -941,9 +943,8 @@ function renderSeasonDetail(show, season) {
   const firstEp = (season.episodes || [])[0];
   const firstEntry = firstEp ? episodeEntry(show, season, firstEp, season.title + " · " + firstEp.title) : "";
   const t = tmdb(show);
-  const sm = show._season_meta || {};
-  const sMeta = sm[String(season.season_number)] || {};
-  const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
+  const sMeta = seasonDouban(season);
+  const tmdbSeasonData = seasonTmdb(season);
   const seasonRating = sMeta.rating || tmdbSeasonData.rating || "";
   const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
   const seasonSynopsis = sMeta.synopsis || tmdbSeasonData.overview || "";
@@ -1003,8 +1004,7 @@ function renderSeasonDetail(show, season) {
 }
 
 function renderSeasonDoubanTags(show, season) {
-  const sm = (show._season_meta || {});
-  const sMeta = sm[String(season.season_number)] || {};
+  const sMeta = seasonDouban(season);
   const d = douban(show);
   const abstract = d.abstract || "";
   let tags = [];
@@ -1040,7 +1040,7 @@ function renderEpisodeCard(show, season, ep) {
   const label = season.title + " · " + ep.title;
   const entry = episodeEntry(show, season, ep, label);
   const epHist = historyCache[ep.id];
-  const thumbSrc = artworkUrl(ep, "thumb") || artworkUrl(ep, "poster");
+  const thumbSrc = ep.still_url || ep.metadata?.tmdb?.still_url || artworkUrl(ep, "thumb") || artworkUrl(ep, "poster");
   const epNum = "S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0");
 
   return '<div class="episode-row' + (active ? ' active-episode' : '') + '" onclick="playMedia(\'' + escapeJs(ep.path) + '\',' + entry + ')">'

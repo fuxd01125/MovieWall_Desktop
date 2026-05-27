@@ -1,5 +1,6 @@
 """SQLite database backend — single source of truth for all data."""
 import json
+import hashlib
 import sqlite3
 import time
 
@@ -67,9 +68,75 @@ CREATE TABLE IF NOT EXISTS metadata_tmdb (
     genres        TEXT,       -- JSON array
     poster_url    TEXT,
     backdrop_url  TEXT,
-    season_data   TEXT,       -- JSON: { "1": {"rating":8.5, "air_date":"...", "overview":"..."}, ... }
+    season_data   TEXT,       -- deprecated legacy cache; use metadata_tmdb_seasons
     raw           TEXT,       -- full TMDB response (JSON)
     fetched_at    REAL
+);
+
+-- TMDB season metadata — one row per local season
+CREATE TABLE IF NOT EXISTS metadata_tmdb_seasons (
+    season_id     TEXT PRIMARY KEY REFERENCES seasons(id) ON DELETE CASCADE,
+    show_id       TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    season_number INTEGER NOT NULL,
+    tmdb_id       INTEGER,
+    title         TEXT,
+    overview      TEXT,
+    rating        REAL,
+    air_date      TEXT,
+    poster_url    TEXT,
+    raw           TEXT,
+    fetched_at    REAL,
+    UNIQUE(show_id, season_number)
+);
+
+-- TMDB episode metadata — one row per local episode
+CREATE TABLE IF NOT EXISTS metadata_tmdb_episodes (
+    episode_id     TEXT PRIMARY KEY REFERENCES episodes(id) ON DELETE CASCADE,
+    show_id        TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    season_id      TEXT NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+    season_number  INTEGER NOT NULL,
+    episode_number INTEGER NOT NULL,
+    tmdb_id        INTEGER,
+    title          TEXT,
+    overview       TEXT,
+    rating         REAL,
+    air_date       TEXT,
+    still_url      TEXT,
+    runtime        INTEGER,
+    raw            TEXT,
+    fetched_at     REAL,
+    UNIQUE(show_id, season_number, episode_number)
+);
+
+-- People are source-normalized so future providers can coexist.
+CREATE TABLE IF NOT EXISTS people (
+    id                   TEXT PRIMARY KEY, -- e.g. tmdb:12345
+    source               TEXT NOT NULL,
+    source_id            TEXT NOT NULL,
+    name                 TEXT,
+    original_name        TEXT,
+    profile_url          TEXT,
+    known_for_department TEXT,
+    raw                  TEXT,
+    updated_at           REAL,
+    UNIQUE(source, source_id)
+);
+
+-- Cast/crew credits can attach to media, season, or episode scopes.
+CREATE TABLE IF NOT EXISTS credits (
+    id           TEXT PRIMARY KEY,
+    source       TEXT NOT NULL,
+    scope        TEXT NOT NULL, -- media | season | episode
+    media_id     TEXT REFERENCES media(id) ON DELETE CASCADE,
+    season_id    TEXT REFERENCES seasons(id) ON DELETE CASCADE,
+    episode_id   TEXT REFERENCES episodes(id) ON DELETE CASCADE,
+    person_id    TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+    department   TEXT,
+    job          TEXT,
+    character    TEXT,
+    order_index  INTEGER DEFAULT 0,
+    raw          TEXT,
+    fetched_at   REAL
 );
 
 -- Douban metadata — fully separate from core & tmdb
@@ -138,6 +205,13 @@ CREATE INDEX IF NOT EXISTS idx_history_media  ON history(media_id);
 CREATE INDEX IF NOT EXISTS idx_media_path    ON media(path);
 CREATE INDEX IF NOT EXISTS idx_media_folder  ON media(folder);
 CREATE INDEX IF NOT EXISTS idx_episodes_path ON episodes(path);
+CREATE INDEX IF NOT EXISTS idx_tmdb_seasons_show ON metadata_tmdb_seasons(show_id);
+CREATE INDEX IF NOT EXISTS idx_tmdb_episodes_show ON metadata_tmdb_episodes(show_id);
+CREATE INDEX IF NOT EXISTS idx_tmdb_episodes_season ON metadata_tmdb_episodes(season_id);
+CREATE INDEX IF NOT EXISTS idx_credits_media ON credits(media_id);
+CREATE INDEX IF NOT EXISTS idx_credits_season ON credits(season_id);
+CREATE INDEX IF NOT EXISTS idx_credits_episode ON credits(episode_id);
+CREATE INDEX IF NOT EXISTS idx_credits_person ON credits(person_id);
 
 -- Scanner state tracking
 CREATE TABLE IF NOT EXISTS metadata_tracker (
@@ -167,7 +241,7 @@ def _migrate_schema_v2():
     conn = get_conn()
     try:
         row = conn.execute("SELECT value FROM metadata_tracker WHERE key='schema_version'").fetchone()
-        if row and row["value"] == "2":
+        if row and int(row["value"] or 0) >= 2:
             return
         conn.execute("PRAGMA foreign_keys=OFF")
         # Rebuild seasons with UNIQUE(show_id, season_number)
@@ -222,6 +296,139 @@ def _migrate_schema_v2():
         conn.close()
 
 
+def _migrate_schema_v3():
+    """Add normalized TMDB season/episode metadata and people/credits tables.
+
+    Also migrates legacy metadata_tmdb.season_data JSON into
+    metadata_tmdb_seasons when matching local season rows exist.
+    """
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT value FROM metadata_tracker WHERE key='schema_version'").fetchone()
+        if row and int(row["value"] or 0) >= 3:
+            return
+
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS metadata_tmdb_seasons (
+                season_id     TEXT PRIMARY KEY REFERENCES seasons(id) ON DELETE CASCADE,
+                show_id       TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+                season_number INTEGER NOT NULL,
+                tmdb_id       INTEGER,
+                title         TEXT,
+                overview      TEXT,
+                rating        REAL,
+                air_date      TEXT,
+                poster_url    TEXT,
+                raw           TEXT,
+                fetched_at    REAL,
+                UNIQUE(show_id, season_number)
+            );
+
+            CREATE TABLE IF NOT EXISTS metadata_tmdb_episodes (
+                episode_id     TEXT PRIMARY KEY REFERENCES episodes(id) ON DELETE CASCADE,
+                show_id        TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+                season_id      TEXT NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+                season_number  INTEGER NOT NULL,
+                episode_number INTEGER NOT NULL,
+                tmdb_id        INTEGER,
+                title          TEXT,
+                overview       TEXT,
+                rating         REAL,
+                air_date       TEXT,
+                still_url      TEXT,
+                runtime        INTEGER,
+                raw            TEXT,
+                fetched_at     REAL,
+                UNIQUE(show_id, season_number, episode_number)
+            );
+
+            CREATE TABLE IF NOT EXISTS people (
+                id                   TEXT PRIMARY KEY,
+                source               TEXT NOT NULL,
+                source_id            TEXT NOT NULL,
+                name                 TEXT,
+                original_name        TEXT,
+                profile_url          TEXT,
+                known_for_department TEXT,
+                raw                  TEXT,
+                updated_at           REAL,
+                UNIQUE(source, source_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS credits (
+                id           TEXT PRIMARY KEY,
+                source       TEXT NOT NULL,
+                scope        TEXT NOT NULL,
+                media_id     TEXT REFERENCES media(id) ON DELETE CASCADE,
+                season_id    TEXT REFERENCES seasons(id) ON DELETE CASCADE,
+                episode_id   TEXT REFERENCES episodes(id) ON DELETE CASCADE,
+                person_id    TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+                department   TEXT,
+                job          TEXT,
+                character    TEXT,
+                order_index  INTEGER DEFAULT 0,
+                raw          TEXT,
+                fetched_at   REAL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_tmdb_seasons_show ON metadata_tmdb_seasons(show_id);
+            CREATE INDEX IF NOT EXISTS idx_tmdb_episodes_show ON metadata_tmdb_episodes(show_id);
+            CREATE INDEX IF NOT EXISTS idx_tmdb_episodes_season ON metadata_tmdb_episodes(season_id);
+            CREATE INDEX IF NOT EXISTS idx_credits_media ON credits(media_id);
+            CREATE INDEX IF NOT EXISTS idx_credits_season ON credits(season_id);
+            CREATE INDEX IF NOT EXISTS idx_credits_episode ON credits(episode_id);
+            CREATE INDEX IF NOT EXISTS idx_credits_person ON credits(person_id);
+        """)
+
+        rows = conn.execute(
+            "SELECT media_id, season_data, fetched_at FROM metadata_tmdb WHERE season_data IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            try:
+                legacy = json.loads(row["season_data"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                legacy = {}
+            if not isinstance(legacy, dict):
+                continue
+            for sn_text, data in legacy.items():
+                if not isinstance(data, dict):
+                    continue
+                try:
+                    sn = int(sn_text)
+                except (TypeError, ValueError):
+                    continue
+                season = conn.execute(
+                    "SELECT id FROM seasons WHERE show_id=? AND season_number=?",
+                    (row["media_id"], sn),
+                ).fetchone()
+                if not season:
+                    continue
+                conn.execute("""
+                    INSERT INTO metadata_tmdb_seasons
+                        (season_id,show_id,season_number,title,overview,rating,air_date,poster_url,raw,fetched_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(season_id) DO UPDATE SET
+                        title=excluded.title, overview=excluded.overview,
+                        rating=excluded.rating, air_date=excluded.air_date,
+                        poster_url=excluded.poster_url, raw=excluded.raw,
+                        fetched_at=excluded.fetched_at
+                """, (
+                    season["id"], row["media_id"], sn,
+                    data.get("title") or data.get("name"),
+                    data.get("overview"), data.get("rating"),
+                    data.get("air_date"), data.get("poster_url"),
+                    json.dumps(data, ensure_ascii=False), row["fetched_at"] or time.time(),
+                ))
+
+        conn.execute("INSERT OR REPLACE INTO metadata_tracker (key, value) VALUES ('schema_version', '3')")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def init_db():
     conn = get_conn()
     try:
@@ -257,6 +464,7 @@ def init_db():
         conn.close()
     # Run v2 schema migration (UNIQUE constraints + indexes)
     _migrate_schema_v2()
+    _migrate_schema_v3()
 
 
 def scrub_row(row):
@@ -351,6 +559,9 @@ def delete_media(media_id):
     try:
         conn.execute("DELETE FROM episodes WHERE show_id=?", (media_id,))
         conn.execute("DELETE FROM seasons WHERE show_id=?", (media_id,))
+        conn.execute("DELETE FROM credits WHERE media_id=?", (media_id,))
+        conn.execute("DELETE FROM metadata_tmdb_episodes WHERE show_id=?", (media_id,))
+        conn.execute("DELETE FROM metadata_tmdb_seasons WHERE show_id=?", (media_id,))
         conn.execute("DELETE FROM metadata_tmdb WHERE media_id=?", (media_id,))
         conn.execute("DELETE FROM metadata_douban WHERE media_id=?", (media_id,))
         conn.execute("DELETE FROM metadata_douban_seasons WHERE show_id=?", (media_id,))
@@ -366,7 +577,11 @@ def delete_media(media_id):
         conn.close()
 
 
-_DELETE_TABLES = frozenset({"episodes","seasons","metadata_douban_seasons","metadata_tmdb","metadata_douban","media"})
+_DELETE_TABLES = (
+    "credits", "metadata_tmdb_episodes", "metadata_tmdb_seasons",
+    "episodes", "seasons", "metadata_douban_seasons",
+    "metadata_tmdb", "metadata_douban", "media",
+)
 
 def delete_all_media():
     """Delete only media and metadata — preserve user data (ratings, favorites, history)."""
@@ -476,7 +691,6 @@ def upsert_episode_batch(episode_list):
 def save_tmdb_meta(media_id, data):
     conn = get_conn()
     try:
-        season_data = data.get("_season_data")
         conn.execute("""
             INSERT INTO metadata_tmdb (media_id,tmdb_id,title,original_title,overview,rating,date,
                                        genres,poster_url,backdrop_url,season_data,raw,fetched_at)
@@ -498,7 +712,7 @@ def save_tmdb_meta(media_id, data):
             json.dumps(data.get("genres", []), ensure_ascii=False),
             data.get("poster_url"),
             data.get("backdrop_url"),
-            json.dumps(season_data, ensure_ascii=False) if season_data else None,
+            None,
             json.dumps(data, ensure_ascii=False),
             time.time(),
         ))
@@ -534,15 +748,140 @@ def load_tmdb_meta(media_id):
             data["genres"] = json.loads(r["genres"])
         except (json.JSONDecodeError, TypeError):
             data["genres"] = []
-    if r.get("season_data"):
-        try:
-            data["_season_data"] = json.loads(r["season_data"])
-        except (json.JSONDecodeError, TypeError):
-            data["_season_data"] = {}
     for k in ("tmdb_id","title","original_title","overview","rating","date","poster_url","backdrop_url","fetched_at"):
         if r.get(k) is not None:
             data[k] = r[k]
     return data
+
+
+def save_tmdb_season_meta(season_id, show_id, season_number, data):
+    conn = get_conn()
+    try:
+        conn.execute("""
+            INSERT INTO metadata_tmdb_seasons
+                (season_id,show_id,season_number,tmdb_id,title,overview,rating,air_date,poster_url,raw,fetched_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(season_id) DO UPDATE SET
+                tmdb_id=excluded.tmdb_id, title=excluded.title,
+                overview=excluded.overview, rating=excluded.rating,
+                air_date=excluded.air_date, poster_url=excluded.poster_url,
+                raw=excluded.raw, fetched_at=excluded.fetched_at
+        """, (
+            season_id, show_id, season_number,
+            data.get("tmdb_id"), data.get("title"), data.get("overview"),
+            data.get("rating"), data.get("air_date"), data.get("poster_url"),
+            json.dumps(data, ensure_ascii=False), time.time(),
+        ))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def save_tmdb_episode_meta(episode_id, show_id, season_id, season_number, episode_number, data):
+    conn = get_conn()
+    try:
+        conn.execute("""
+            INSERT INTO metadata_tmdb_episodes
+                (episode_id,show_id,season_id,season_number,episode_number,tmdb_id,title,
+                 overview,rating,air_date,still_url,runtime,raw,fetched_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(episode_id) DO UPDATE SET
+                tmdb_id=excluded.tmdb_id, title=excluded.title,
+                overview=excluded.overview, rating=excluded.rating,
+                air_date=excluded.air_date, still_url=excluded.still_url,
+                runtime=excluded.runtime, raw=excluded.raw, fetched_at=excluded.fetched_at
+        """, (
+            episode_id, show_id, season_id, season_number, episode_number,
+            data.get("tmdb_id"), data.get("title"), data.get("overview"),
+            data.get("rating"), data.get("air_date"), data.get("still_url"),
+            data.get("runtime"), json.dumps(data, ensure_ascii=False), time.time(),
+        ))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def clear_tmdb_child_meta(media_id):
+    """Clear normalized TMDB children and scoped credits for a media item."""
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM credits WHERE source='tmdb' AND media_id=?", (media_id,))
+        conn.execute("DELETE FROM metadata_tmdb_episodes WHERE show_id=?", (media_id,))
+        conn.execute("DELETE FROM metadata_tmdb_seasons WHERE show_id=?", (media_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _credit_id(source, scope, media_id, season_id, episode_id, person_id, role_key, order_index):
+    raw = "||".join(str(x or "") for x in (
+        source, scope, media_id, season_id, episode_id, person_id, role_key, order_index
+    ))
+    return hashlib.md5(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
+
+
+def save_tmdb_credits(scope, credits, media_id=None, season_id=None, episode_id=None):
+    """Store TMDB people + cast/crew credits for a media/season/episode scope."""
+    conn = get_conn()
+    try:
+        if scope == "media" and media_id:
+            conn.execute("DELETE FROM credits WHERE source='tmdb' AND scope='media' AND media_id=?", (media_id,))
+        elif scope == "season" and season_id:
+            conn.execute("DELETE FROM credits WHERE source='tmdb' AND scope='season' AND season_id=?", (season_id,))
+        elif scope == "episode" and episode_id:
+            conn.execute("DELETE FROM credits WHERE source='tmdb' AND scope='episode' AND episode_id=?", (episode_id,))
+
+        if not credits:
+            conn.commit()
+            return
+
+        now = time.time()
+        for idx, credit in enumerate(credits):
+            source_id = credit.get("id")
+            if not source_id:
+                continue
+            person_id = f"tmdb:{source_id}"
+            conn.execute("""
+                INSERT INTO people
+                    (id,source,source_id,name,original_name,profile_url,known_for_department,raw,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name, original_name=excluded.original_name,
+                    profile_url=excluded.profile_url,
+                    known_for_department=excluded.known_for_department,
+                    raw=excluded.raw, updated_at=excluded.updated_at
+            """, (
+                person_id, "tmdb", str(source_id),
+                credit.get("name"), credit.get("original_name"),
+                credit.get("profile_url"), credit.get("known_for_department"),
+                json.dumps(credit, ensure_ascii=False), now,
+            ))
+            role_key = credit.get("character") or credit.get("job") or credit.get("department") or "cast"
+            cid = _credit_id("tmdb", scope, media_id, season_id, episode_id, person_id, role_key, idx)
+            conn.execute("""
+                INSERT INTO credits
+                    (id,source,scope,media_id,season_id,episode_id,person_id,department,job,character,order_index,raw,fetched_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                cid, "tmdb", scope, media_id, season_id, episode_id, person_id,
+                credit.get("department"), credit.get("job"), credit.get("character"),
+                credit.get("order_index", idx), json.dumps(credit, ensure_ascii=False), now,
+            ))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def save_douban_meta(media_id, data):
@@ -849,15 +1188,97 @@ def _load_all_tmdb_meta():
                 d["genres"] = json.loads(r["genres"])
             except (json.JSONDecodeError, TypeError):
                 d["genres"] = []
-        if r["season_data"]:
-            try:
-                d["_season_data"] = json.loads(r["season_data"])
-            except (json.JSONDecodeError, TypeError):
-                d["_season_data"] = {}
         for k in ("tmdb_id","title","original_title","overview","rating","date","poster_url","backdrop_url","fetched_at"):
             if r[k] is not None:
                 d[k] = r[k]
         result[mid] = d
+    return result
+
+
+def _load_all_tmdb_season_meta():
+    """Load normalized TMDB season metadata. Returns dict[show_id][season_number]."""
+    conn = get_conn()
+    try:
+        rows = conn.execute("""
+            SELECT show_id,season_id,season_number,tmdb_id,title,overview,rating,air_date,poster_url,fetched_at
+            FROM metadata_tmdb_seasons
+        """).fetchall()
+    except Exception:
+        raise
+    finally:
+        conn.close()
+    result = {}
+    for r in rows:
+        show_id = r["show_id"]
+        result.setdefault(show_id, {})[str(r["season_number"])] = {
+            "season_id": r["season_id"],
+            "season_number": r["season_number"],
+            "tmdb_id": r["tmdb_id"],
+            "title": r["title"],
+            "overview": r["overview"],
+            "rating": r["rating"],
+            "air_date": r["air_date"],
+            "poster_url": r["poster_url"],
+            "fetched_at": r["fetched_at"],
+        }
+    return result
+
+
+def _load_all_tmdb_episode_meta():
+    """Load normalized TMDB episode metadata. Returns dict[episode_id]."""
+    conn = get_conn()
+    try:
+        rows = conn.execute("""
+            SELECT episode_id,show_id,season_id,season_number,episode_number,tmdb_id,title,
+                   overview,rating,air_date,still_url,runtime,fetched_at
+            FROM metadata_tmdb_episodes
+        """).fetchall()
+    except Exception:
+        raise
+    finally:
+        conn.close()
+    return {r["episode_id"]: {
+        "episode_id": r["episode_id"], "show_id": r["show_id"],
+        "season_id": r["season_id"], "season_number": r["season_number"],
+        "episode_number": r["episode_number"], "tmdb_id": r["tmdb_id"],
+        "title": r["title"], "overview": r["overview"],
+        "rating": r["rating"], "air_date": r["air_date"],
+        "still_url": r["still_url"], "runtime": r["runtime"],
+        "fetched_at": r["fetched_at"],
+    } for r in rows}
+
+
+def _load_all_credits():
+    """Load people credits grouped by media/season/episode scope."""
+    conn = get_conn()
+    try:
+        rows = conn.execute("""
+            SELECT c.scope,c.media_id,c.season_id,c.episode_id,c.department,c.job,c.character,c.order_index,
+                   p.id AS person_id,p.source,p.source_id,p.name,p.original_name,p.profile_url,p.known_for_department
+            FROM credits c
+            JOIN people p ON p.id=c.person_id
+            ORDER BY c.scope,c.order_index,c.character
+        """).fetchall()
+    except Exception:
+        raise
+    finally:
+        conn.close()
+    result = {"media": {}, "season": {}, "episode": {}}
+    for r in rows:
+        person = {
+            "id": r["person_id"], "source": r["source"],
+            "source_id": r["source_id"], "name": r["name"],
+            "original_name": r["original_name"], "profile_url": r["profile_url"],
+            "known_for_department": r["known_for_department"],
+        }
+        credit = {
+            "person": person, "department": r["department"],
+            "job": r["job"], "character": r["character"],
+            "order_index": r["order_index"],
+        }
+        key = r["media_id"] if r["scope"] == "media" else r["season_id"] if r["scope"] == "season" else r["episode_id"]
+        if key:
+            result.setdefault(r["scope"], {}).setdefault(key, []).append(credit)
     return result
 
 
@@ -947,9 +1368,12 @@ def build_library_dict():
 
     # Batch-load all metadata in a few queries
     all_tmdb = _load_all_tmdb_meta()
+    all_tmdb_seasons = _load_all_tmdb_season_meta()
+    all_tmdb_episodes = _load_all_tmdb_episode_meta()
     all_douban = _load_all_douban_meta()
     all_shows = _load_all_shows()
     all_ds = _load_all_douban_season_meta()
+    all_credits = _load_all_credits()
 
     items = []
     for m in media_rows:
@@ -969,26 +1393,43 @@ def build_library_dict():
             if tmdb and not tmdb.get("overview", "").strip() and douban.get("synopsis", "").strip():
                 meta["tmdb"] = dict(tmdb)
                 meta["tmdb"]["overview"] = douban["synopsis"]
+        media_credits = all_credits.get("media", {}).get(mid, [])
+        if media_credits:
+            meta.setdefault("credits", {})["cast"] = media_credits
         item["metadata"] = meta
 
         if item["type"] == "show":
             seasons_data = all_shows.get(mid, [])
             ds = all_ds.get(mid, {})
-            # Merge per-season TMDB and Douban metadata into each season object
-            season_tmdb = tmdb.get("_season_data", {}) if tmdb else {}
+            tmdb_season_meta = all_tmdb_seasons.get(mid, {})
             for s in seasons_data:
                 ssn = str(s.get("season_number", ""))
-                # Douban per-season metadata
                 s_meta = ds.get(ssn, {})
                 if s_meta:
+                    s.setdefault("metadata", {})["douban"] = s_meta
                     s["douban"] = s_meta
-                # TMDB per-season overview (overrides show-level overview for season)
-                st = season_tmdb.get(ssn, {})
+                st = tmdb_season_meta.get(ssn, {})
                 if st:
+                    s.setdefault("metadata", {})["tmdb"] = st
                     s["tmdb"] = st
+                season_credits = all_credits.get("season", {}).get(s["id"], [])
+                if season_credits:
+                    s.setdefault("metadata", {}).setdefault("credits", {})["cast"] = season_credits
+                for ep in s.get("episodes", []):
+                    et = all_tmdb_episodes.get(ep["id"])
+                    if et:
+                        ep.setdefault("metadata", {})["tmdb"] = et
+                        ep["tmdb"] = et
+                        if et.get("title"):
+                            ep["tmdb_title"] = et["title"]
+                        if et.get("overview"):
+                            ep["overview"] = et["overview"]
+                        if et.get("still_url"):
+                            ep["still_url"] = et["still_url"]
+                    ep_credits = all_credits.get("episode", {}).get(ep["id"], [])
+                    if ep_credits:
+                        ep.setdefault("metadata", {}).setdefault("credits", {})["cast"] = ep_credits
             item["seasons"] = seasons_data
-            if ds:
-                item["_season_meta"] = ds
 
         items.append(item)
 

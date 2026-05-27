@@ -12,8 +12,7 @@ from moviewall.log import log
 from moviewall.database import (
     build_library_dict, load_all_ratings, load_all_history, load_all_favorites,
     save_rating, delete_rating, save_history, toggle_favorite,
-    load_tmdb_meta, load_douban_meta, save_douban_meta, save_tmdb_meta,
-    get_conn,
+    save_douban_meta, get_conn,
 )
 from moviewall.douban import fetch_douban_by_id, set_douban_id_override
 from moviewall.scanner import scan_library
@@ -26,58 +25,10 @@ _scan_lock = threading.Lock()
 
 
 def find_media_by_id(media_id):
-    from moviewall.database import scrub_rows, load_douban_season_meta
-    conn = get_conn()
-    try:
-        row = conn.execute("SELECT * FROM media WHERE id=?", (media_id,)).fetchone()
-    except Exception:
-        raise
-    finally:
-        conn.close()
-    if row is None:
-        return None
-    item = dict(row)
-    item["type"] = item.pop("media_type")
-    meta = {}
-    tmdb = load_tmdb_meta(media_id)
-    douban = load_douban_meta(media_id)
-    if tmdb:
-        meta["tmdb"] = tmdb
-    if douban:
-        meta["douban"] = douban
-        # API-layer fallback: Douban synopsis when TMDB overview empty
-        # (avoids metadata pollution at DB layer)
-        if tmdb and not tmdb.get("overview", "").strip() and douban.get("synopsis", "").strip():
-            meta["tmdb"] = dict(tmdb)
-            meta["tmdb"]["overview"] = douban["synopsis"]
-    item["metadata"] = meta
-    if item["type"] == "show":
-        conn2 = get_conn()
-        try:
-            seasons = scrub_rows(conn2.execute(
-                "SELECT * FROM seasons WHERE show_id=? ORDER BY season_number", (media_id,)
-            ).fetchall())
-            ds = load_douban_season_meta(media_id)
-            season_tmdb = tmdb.get("_season_data", {}) if tmdb else {}
-            for s in seasons:
-                s["episodes"] = scrub_rows(conn2.execute(
-                    "SELECT * FROM episodes WHERE season_id=? ORDER BY episode_number", (s["id"],)
-                ).fetchall())
-                ssn = str(s.get("season_number", ""))
-                s_meta = ds.get(ssn, {})
-                if s_meta:
-                    s["douban"] = s_meta
-                st = season_tmdb.get(ssn, {})
-                if st:
-                    s["tmdb"] = st
-            if ds:
-                item["_season_meta"] = ds
-        except Exception:
-            raise
-        finally:
-            conn2.close()
-        item["seasons"] = seasons
-    return item
+    for item in build_library_dict().get("items", []):
+        if item.get("id") == media_id:
+            return item
+    return None
 
 
 def is_allowed_media_path(path):
