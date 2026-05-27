@@ -1002,10 +1002,24 @@ def build_library_dict():
     finally:
         conn3.close()
 
+    # Dynamic category stats — auto-generated from user's config, not hardcoded
+    cat_map = {}
+    for i in items:
+        ck = i.get("category_key") or ""
+        cn = i.get("category_name") or ck
+        if ck not in cat_map:
+            cat_map[ck] = {"key": ck, "name": cn, "count": 0, "movie_count": 0, "show_count": 0}
+        cat_map[ck]["count"] += 1
+        if i["type"] == "movie":
+            cat_map[ck]["movie_count"] += 1
+        else:
+            cat_map[ck]["show_count"] += 1
+
     stats = {
         "movies": sum(1 for i in items if i["type"] == "movie"),
         "shows": sum(1 for i in items if i["type"] == "show"),
         "episodes": sum(i.get("episode_count", 0) for i in items if i["type"] == "show"),
         "metadata_version": metadata_version,
+        "categories": sorted(cat_map.values(), key=lambda x: x["name"]),
     }
     return {"items": items, "stats": stats}

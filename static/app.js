@@ -183,11 +183,12 @@ function showToast(msg, duration) {
 /* ===== Category Tabs ===== */
 
 function renderCategoryTabs() {
+  const catStats = library.stats?.categories || [];
   const tabs = [
     {key:"all", label:"全部"},
     {key:"movie", label:"电影"},
     {key:"show", label:"剧集"},
-    {key:"anime", label:"动漫"}
+    ...catStats.map(c => ({key:"cat:" + c.key, label: c.name}))
   ];
   catTabs.innerHTML = tabs.map(t =>
     '<button class="cat-tab' + (activeTab === t.key ? ' active' : '') + '" onclick="setTab(\'' + t.key + '\')">' + t.label + '</button>'
@@ -446,11 +447,7 @@ function renderHome() {
 
     const movies = items.filter(i => i.type === "movie");
     const shows = items.filter(i => i.type === "show");
-    const anime = items.filter(i => {
-      const ck = (i.category_key || "").toLowerCase();
-      const cn = (i.category_name || "").toLowerCase();
-      return ck.includes("anime") || cn.includes("anime") || ck.includes("动漫") || cn.includes("动漫");
-    });
+    const catStats = library.stats?.categories || [];
     const recent = [...items].sort((a, b) => (b.updated_at || b.created_at || 0) - (a.updated_at || a.created_at || 0)).slice(0, 20);
 
     let html = renderHero(heroItem);
@@ -464,8 +461,12 @@ function renderHome() {
     if (shows.length > 0) {
       html += renderRowSection("剧集", shows, renderHomeCard, "show");
     }
-    if (anime.length > 0) {
-      html += renderRowSection("动漫", anime, renderHomeCard, "anime");
+    // Dynamic category sections — any category from config appears automatically
+    for (const cat of catStats) {
+      const catItems = items.filter(i => i.category_key === cat.key);
+      if (catItems.length > 0) {
+        html += renderRowSection(cat.name, catItems, renderHomeCard, "cat:" + cat.key);
+      }
     }
     if (recent.length > 0) {
       html += renderRowSection("最近添加", recent.slice(0, 15), renderHomeCard);
@@ -517,13 +518,15 @@ function renderHome() {
 function getFilteredItems() {
   const q = search.value.trim().toLowerCase();
   return library.items.filter(item => {
-    if (activeTab === "anime") {
-      const ck = (item.category_key || "").toLowerCase();
-      const cn = (item.category_name || "").toLowerCase();
-      if (!ck.includes("anime") && !cn.includes("anime") && !ck.includes("动漫") && !cn.includes("动漫") && !ck.includes("动画") && !cn.includes("动画")) return false;
-    } else if (activeTab !== "all") {
-      if (item.type !== activeTab) return false;
+    if (activeTab === "movie") {
+      if (item.type !== "movie") return false;
+    } else if (activeTab === "show") {
+      if (item.type !== "show") return false;
+    } else if (activeTab.startsWith("cat:")) {
+      const catKey = activeTab.slice(4);
+      if (item.category_key !== catKey) return false;
     }
+    // activeTab === "all" → no filter
     if (!q) return true;
     let bag = (titleOf(item) + " " + (item.title || "") + " " + (item.year || "") + " " + (item.category_name || "")).toLowerCase();
     if (item.type === "movie") bag += " " + (item.filename || "") + " " + (item.folder || "");
@@ -543,12 +546,13 @@ function getContinueItems() {
   }
   const q = search.value.trim().toLowerCase();
   return items.filter(({item}) => {
-    if (activeTab === "anime") {
-      const ck = (item.category_key || "").toLowerCase();
-      const cn = (item.category_name || "").toLowerCase();
-      if (!ck.includes("anime") && !cn.includes("anime") && !ck.includes("动漫") && !cn.includes("动漫") && !ck.includes("动画") && !cn.includes("动画")) return false;
-    } else if (activeTab !== "all") {
-      if (item.type !== activeTab) return false;
+    if (activeTab === "movie") {
+      if (item.type !== "movie") return false;
+    } else if (activeTab === "show") {
+      if (item.type !== "show") return false;
+    } else if (activeTab.startsWith("cat:")) {
+      const catKey = activeTab.slice(4);
+      if (item.category_key !== catKey) return false;
     }
     if (!q) return true;
     const bag = (titleOf(item) + " " + (item.year || "")).toLowerCase();
@@ -1160,7 +1164,7 @@ function renderSettings() {
   renderCategoryTabs();
   renderBreadcrumb();
   const catKeys = Object.keys(categoriesConfig);
-  const rows = catKeys.map((key, i) => '<div class="settings-cat-row"><input class="sc-folder" value="' + escapeHtml(key) + '" placeholder="文件夹名"><input class="sc-name" value="' + escapeHtml(categoriesConfig[key].name) + '" placeholder="显示名"><select class="sc-type"><option value="movie"' + (categoriesConfig[key].type === "movie" ? " selected" : "") + '>电影</option><option value="show"' + (categoriesConfig[key].type === "show" ? " selected" : "") + '>剧集</option></select><button class="ghost" onclick="this.closest(\'.settings-cat-row\').remove()">✕</button></div>').join("");
+  const rows = catKeys.map((key, i) => '<div class="settings-cat-row"><input class="sc-folder" value="' + escapeHtml(key) + '" placeholder="文件夹名"><input class="sc-name" value="' + escapeHtml(categoriesConfig[key].name) + '" placeholder="显示名"><button class="ghost" onclick="this.closest(\'.settings-cat-row\').remove()">✕</button></div>').join("");
 
   let doubanSection = '';
   if (settingDoubanItemId) {
@@ -1208,7 +1212,7 @@ function addSettingsRow() {
   if (!container) return;
   const div = document.createElement("div");
   div.className = "settings-cat-row";
-  div.innerHTML = '<input class="sc-folder" placeholder="文件夹名"><input class="sc-name" placeholder="显示名"><select class="sc-type"><option value="movie">电影</option><option value="show" selected>剧集</option></select><button class="ghost" onclick="this.closest(\'.settings-cat-row\').remove()">✕</button>';
+  div.innerHTML = '<input class="sc-folder" placeholder="文件夹名"><input class="sc-name" placeholder="显示名"><button class="ghost" onclick="this.closest(\'.settings-cat-row\').remove()">✕</button>';
   container.append(div);
 }
 
@@ -1218,8 +1222,7 @@ async function saveSettings() {
   for (const row of rows) {
     const folder = row.querySelector(".sc-folder").value.trim();
     const name = row.querySelector(".sc-name").value.trim();
-    const type = row.querySelector(".sc-type").value;
-    if (folder && name) cats[folder] = {name, type};
+    if (folder && name) cats[folder] = name;
   }
   const res = await fetch("/api/config", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({categories: cats})});
   const data = await res.json();
@@ -1246,11 +1249,9 @@ function normalizeCategoriesConfig() {
   const normalized = {};
   for (const [key, value] of Object.entries(categoriesConfig || {})) {
     if (typeof value === "string") {
-      const lower = (key + " " + value).toLowerCase();
-      const type = lower.includes("tv") || lower.includes("show") || lower.includes("anime") || lower.includes("剧") || lower.includes("动漫") ? "show" : "movie";
-      normalized[key] = {name: value, type};
+      normalized[key] = {name: value};
     } else {
-      normalized[key] = {name: value?.name || key, type: value?.type || "movie"};
+      normalized[key] = {name: value?.name || key};
     }
   }
   categoriesConfig = normalized;
@@ -1285,7 +1286,8 @@ async function _loadAfterScan() {
   const res = await fetch("/api/library");
   library = await res.json();
   const s = library.stats;
-  showToast("完成 - " + (s.movies + s.shows) + " 部 / " + s.episodes + " 集");
+  const catCount = s.categories ? s.categories.length : 0;
+  showToast("完成 - " + (s.movies + s.shows) + " 部 / " + s.episodes + " 集" + (catCount ? " · " + catCount + " 个分类" : ""));
   navStack = [];
   renderHome();
 }

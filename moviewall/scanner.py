@@ -1,9 +1,12 @@
-"""Scanner — walks media folders, updates database."""
+"""Scanner — walks media folders, updates database.
+Now uses dynamic category detection: media_type (movie/show) is auto-detected
+from file structure, not from hardcoded category names.
+"""
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from moviewall.config import load_config, APP_DIR
+from moviewall.config import load_config, APP_DIR, normalize_categories
 from moviewall.constants import VIDEO_EXTS
 from moviewall.log import log, Timer
 from moviewall.utils import (
@@ -66,58 +69,128 @@ def _cleanup_orphaned_entries(scanned_items):
             log.error("Failed to delete orphan: %s", orphan_id)
 
 
-def _scan_movies(folder, cat_key, cat_name):
-    """Scan movies from a category folder. Returns list of item dicts."""
-    items = []
-    dirs = [p for p in folder.iterdir() if p.is_dir()]
-    loose = [p for p in folder.iterdir()
-             if p.is_file() and p.suffix.lower() in VIDEO_EXTS]
+def _detect_show_folder(folder):
+    """Auto-detect if a subdirectory looks like a TV show based on file structure.
+    Returns True if season subdirectories or episode-numbered filenames are found.
+    """
+    # Check for season subdirectories
+    for p in folder.iterdir():
+        if not p.is_dir():
+            continue
+        if re.search(r"Season\s*\d+", p.name, flags=re.I):
+            return True
+        if re.search(r"第\s*\d+\s*季", p.name):
+            return True
+        if re.search(r"第\s*[一二三四五六七八九十]+\s*季", p.name):
+            return True
+    # Check for episode patterns in filenames
+    videos = [p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in VIDEO_EXTS]
+    if not videos:
+        return False
+    ep_count = sum(1 for v in videos if parse_episode_number(v.name) > 0)
+    # If majority of videos have episode numbers, treat as show
+    return ep_count >= len(videos) * 0.5 if len(videos) > 1 else False
 
-    for movie_folder in dirs:
+
+def _scan_single_movie(subfolder, cat_key, cat_name, videos=None):
+    """Scan a single movie subdirectory. Returns item dict or None."""
+    if videos is None:
         videos = sorted(
-            [p for p in movie_folder.rglob("*") if p.is_file() and p.suffix.lower() in VIDEO_EXTS],
+            [p for p in subfolder.rglob("*") if p.is_file() and p.suffix.lower() in VIDEO_EXTS],
             key=lambda p: p.name.lower(),
         )
+    if not videos:
+        return None
+    main = max(videos, key=lambda p: p.stat().st_size if p.exists() else 0)
+    title = clean_title(subfolder.name)
+    year = parse_year(subfolder.name)
+    item_id = stable_id("movie", main.resolve())
+    poster = find_movie_poster(subfolder, title, main)
+    thumb = poster or generate_video_image(
+        main, APP_DIR / "static" / "generated" / "thumbs" / f"{item_id}.jpg",
+        int(load_config().get("thumbnail_second", 60)),
+    )
+    return {
+        "id": item_id, "type": "movie", "category_key": cat_key, "category_name": cat_name,
+        "title": title, "display_title": title, "year": year,
+        "folder": str(subfolder.resolve()), "path": str(main.resolve()),
+        "filename": main.name, "poster": poster, "thumb": thumb,
+    }
+
+
+def _scan_single_show(show_folder, cat_key, cat_name):
+    """Scan a single TV show folder (with season detection). Returns show item dict or None."""
+    season_dirs = _detect_season_folders(show_folder)
+    show_title = clean_title(show_folder.name)
+    show_year = parse_year(show_folder.name)
+    show_id = stable_id("show", show_folder.resolve())
+    seasons = []
+
+    for season_folder in season_dirs:
+        sn = parse_season_number(season_folder.name)
+        videos = sorted(
+            [p for p in season_folder.rglob("*") if p.is_file() and p.suffix.lower() in VIDEO_EXTS],
+            key=_episode_sort_key,
+        )
         if not videos:
+            log.info("SKIP SEASON (no videos): show=%s folder=%s", show_title, season_folder.name)
             continue
-        main = max(videos, key=lambda p: p.stat().st_size if p.exists() else 0)
-        title = clean_title(movie_folder.name)
-        year = parse_year(movie_folder.name)
-        item_id = stable_id("movie", main.resolve())
-        poster = find_movie_poster(movie_folder, title, main)
-        thumb = poster or generate_video_image(
-            main, APP_DIR / "static" / "generated" / "thumbs" / f"{item_id}.jpg",
-            int(load_config().get("thumbnail_second", 60)),
-        )
-        item = {
-            "id": item_id, "type": "movie", "category_key": cat_key, "category_name": cat_name,
-            "title": title, "display_title": title, "year": year,
-            "folder": str(movie_folder.resolve()), "path": str(main.resolve()),
-            "filename": main.name, "poster": poster, "thumb": thumb,
-        }
-        items.append(item)
+        season_id = stable_id("season", season_folder.resolve(), sn)
+        episodes = []
+        for idx, video in enumerate(videos):
+            epn = parse_episode_number(video.name) or (idx + 1)
+            ep_id = stable_id("episode", video.resolve())
+            thumb = find_episode_thumb(video, show_title, sn, epn)
+            if not thumb:
+                thumb = generate_video_image(
+                    video, APP_DIR / "static" / "generated" / "thumbs" / f"{ep_id}.jpg",
+                    int(load_config().get("thumbnail_second", 60)),
+                )
+            ep = {
+                "id": ep_id, "show_id": show_id, "season_id": season_id,
+                "season_number": sn, "episode_number": epn,
+                "title": pretty_episode(epn), "filename": video.name,
+                "path": str(video.resolve()), "folder": str(video.parent.resolve()),
+                "thumb": thumb,
+            }
+            episodes.append(ep)
 
-    for video in loose:
-        title = clean_title(video.name)
-        year = parse_year(video.name)
-        item_id = stable_id("movie", video.resolve())
-        poster = find_movie_poster(video.parent, title, video)
-        thumb = poster or generate_video_image(
-            video, APP_DIR / "static" / "generated" / "thumbs" / f"{item_id}.jpg",
-            int(load_config().get("thumbnail_second", 60)),
-        )
-        item = {
-            "id": item_id, "type": "movie", "category_key": cat_key, "category_name": cat_name,
-            "title": title, "display_title": title, "year": year,
-            "folder": str(video.parent.resolve()), "path": str(video.resolve()),
-            "filename": video.name, "poster": poster, "thumb": thumb,
+        season_poster = find_season_poster(season_folder, show_title, sn) or \
+                        (episodes[0].get("thumb") if episodes else None)
+        season = {
+            "id": season_id, "show_id": show_id, "season_number": sn,
+            "title": pretty_season(sn), "folder": str(season_folder.resolve()),
+            "poster": season_poster, "episode_count": len(episodes), "episodes": episodes,
         }
-        items.append(item)
+        seasons.append(season)
 
-    # Batch write all movies at once
-    if items:
-        upsert_media_batch(items)
-    return items
+    if not seasons:
+        return None
+
+    show_poster = find_show_poster(show_folder, show_title) or seasons[0].get("poster")
+    total_eps = sum(len(s["episodes"]) for s in seasons)
+    show_item = {
+        "id": show_id, "type": "show", "category_key": cat_key, "category_name": cat_name,
+        "title": show_title, "display_title": show_title, "year": show_year,
+        "folder": str(show_folder.resolve()), "poster": show_poster,
+        "season_count": len(seasons), "episode_count": total_eps, "seasons": seasons,
+    }
+    all_seasons = []
+    all_episodes = []
+    for s in seasons:
+        s["show_id"] = show_id
+        all_seasons.append(s)
+        for ep in s["episodes"]:
+            ep["show_id"] = show_id
+            ep["season_id"] = s["id"]
+            all_episodes.append(ep)
+
+    upsert_media_batch([show_item])
+    if all_seasons:
+        upsert_season_batch(all_seasons)
+    if all_episodes:
+        upsert_episode_batch(all_episodes)
+    return show_item
 
 
 def _detect_season_folders(show_folder):
@@ -150,107 +223,72 @@ def _episode_sort_key(p):
     return (999999, 1, p.name.lower())
 
 
-def _scan_shows(folder, cat_key, cat_name):
-    """Scan TV shows from a category folder. Returns list of item dicts."""
-    shows = []
+def _scan_category(folder, cat_key, cat_name):
+    """Scan a single category folder with auto media_type detection.
+    Each subdirectory is independently classified as movie or show based on file structure.
+    Loose video files in the category root are treated as movies.
+    Shows are upserted inside _scan_single_show; movies are batch-upserted here.
+    """
+    items = []
     dirs = sorted([p for p in folder.iterdir() if p.is_dir()], key=lambda p: p.name.lower())
 
-    for show_folder in dirs:
-        season_dirs = _detect_season_folders(show_folder)
+    movie_items = []
+    for subfolder in dirs:
+        if _detect_show_folder(subfolder):
+            item = _scan_single_show(subfolder, cat_key, cat_name)
+        else:
+            item = _scan_single_movie(subfolder, cat_key, cat_name)
+            if item:
+                movie_items.append(item)
+                items.append(item)
 
-        show_title = clean_title(show_folder.name)
-        show_year = parse_year(show_folder.name)
-        show_id = stable_id("show", show_folder.resolve())
-        seasons = []
+    # Batch upsert all subfolder-based movies
+    if movie_items:
+        upsert_media_batch(movie_items)
 
-        for season_folder in season_dirs:
-            sn = parse_season_number(season_folder.name)
-            videos = sorted(
-                [p for p in season_folder.rglob("*") if p.is_file() and p.suffix.lower() in VIDEO_EXTS],
-                key=_episode_sort_key,
-            )
-            if not videos:
-                log.info("SKIP SEASON (no videos): show=%s folder=%s", show_title, season_folder.name)
-                continue
-            season_id = stable_id("season", season_folder.resolve(), sn)
-            episodes = []
-            for idx, video in enumerate(videos):
-                epn = parse_episode_number(video.name) or (idx + 1)
-                ep_id = stable_id("episode", video.resolve())
-                thumb = find_episode_thumb(video, show_title, sn, epn)
-                if not thumb:
-                    thumb = generate_video_image(
-                        video, APP_DIR / "static" / "generated" / "thumbs" / f"{ep_id}.jpg",
-                        int(load_config().get("thumbnail_second", 60)),
-                    )
-                ep = {
-                    "id": ep_id, "show_id": show_id, "season_id": season_id,
-                    "season_number": sn, "episode_number": epn,
-                    "title": pretty_episode(epn), "filename": video.name,
-                    "path": str(video.resolve()), "folder": str(video.parent.resolve()),
-                    "thumb": thumb,
-                }
-                episodes.append(ep)
-
-            season_poster = find_season_poster(season_folder, show_title, sn) or \
-                            (episodes[0].get("thumb") if episodes else None)
-            season = {
-                "id": season_id, "show_id": show_id, "season_number": sn,
-                "title": pretty_season(sn), "folder": str(season_folder.resolve()),
-                "poster": season_poster, "episode_count": len(episodes), "episodes": episodes,
-            }
-            seasons.append(season)
-
-        if not seasons:
-            continue
-
-        show_poster = find_show_poster(show_folder, show_title) or seasons[0].get("poster")
-        total_eps = sum(len(s["episodes"]) for s in seasons)
-        show_item = {
-            "id": show_id, "type": "show", "category_key": cat_key, "category_name": cat_name,
-            "title": show_title, "display_title": show_title, "year": show_year,
-            "folder": str(show_folder.resolve()), "poster": show_poster,
-            "season_count": len(seasons), "episode_count": total_eps, "seasons": seasons,
+    # Loose video files in category root → always movie
+    loose = [p for p in folder.iterdir()
+             if p.is_file() and p.suffix.lower() in VIDEO_EXTS]
+    loose_movies = []
+    for video in loose:
+        title = clean_title(video.name)
+        year = parse_year(video.name)
+        item_id = stable_id("movie", video.resolve())
+        poster = find_movie_poster(video.parent, title, video)
+        thumb = poster or generate_video_image(
+            video, APP_DIR / "static" / "generated" / "thumbs" / f"{item_id}.jpg",
+            int(load_config().get("thumbnail_second", 60)),
+        )
+        item = {
+            "id": item_id, "type": "movie", "category_key": cat_key, "category_name": cat_name,
+            "title": title, "display_title": title, "year": year,
+            "folder": str(video.parent.resolve()), "path": str(video.resolve()),
+            "filename": video.name, "poster": poster, "thumb": thumb,
         }
-        # Prepare batch data
-        all_seasons = []
-        all_episodes = []
-        for s in seasons:
-            s["show_id"] = show_id
-            all_seasons.append(s)
-            for ep in s["episodes"]:
-                ep["show_id"] = show_id
-                ep["season_id"] = s["id"]
-                all_episodes.append(ep)
+        loose_movies.append(item)
 
-        # Batch write all show data at once
-        upsert_media_batch([show_item])
-        if all_seasons:
-            upsert_season_batch(all_seasons)
-        if all_episodes:
-            upsert_episode_batch(all_episodes)
+    if loose_movies:
+        upsert_media_batch(loose_movies)
+        items.extend(loose_movies)
 
-        shows.append(show_item)
-
-    return shows
+    return items
 
 
 def scan_library(progress_callback=None):
-    """Main scan entry point. Returns library dict."""
+    """Main scan entry point. Uses dynamic category detection.
+    All category folder keys from config are auto-discovered — no hardcoded names.
+    """
     cfg = load_config()
     root = Path(cfg.get("library_root", "")).expanduser()
     if not root.exists():
         return {"items": [], "stats": {}, "error": f"根目录不存在：{root}"}
 
-    from moviewall.config import normalize_categories
     categories = normalize_categories()
     t = Timer("scan_library")
     t.__enter__()
     stats = {"movies": 0, "shows": 0, "episodes": 0}
 
     from moviewall.database import get_conn
-    # Incremental scan: if root mtime hasn't changed since last scan, skip full rebuild.
-    # Full scan still triggered on first run or if root mtime changed.
     root_mtime = _folder_mtime(root)
     conn = get_conn()
     try:
@@ -279,12 +317,8 @@ def scan_library(progress_callback=None):
         if progress_callback:
             progress_callback(idx / total if total else 0, f"扫描: {display}")
 
-        if cat.get("type") == "movie":
-            cat_items = _scan_movies(folder, folder_name, display)
-        else:
-            cat_items = _scan_shows(folder, folder_name, display)
+        cat_items = _scan_category(folder, folder_name, display)
 
-        # Attach metadata in parallel (TMDB + Douban → DB separate)
         if cat_items:
             max_workers = min(5, len(cat_items))
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -309,10 +343,8 @@ def scan_library(progress_callback=None):
         len(s["episodes"]) for i in all_items if i["type"] == "show" for s in i.get("seasons", [])
     )
 
-    # Clean up orphans: remove DB entries whose folders no longer exist on disk
     _cleanup_orphaned_entries(all_items)
 
-    # Save scan mtime for incremental detection
     if full_rebuild:
         try:
             conn2 = get_conn()

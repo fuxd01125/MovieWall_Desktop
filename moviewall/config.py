@@ -119,12 +119,16 @@ def get_potplayer_ini_path():
 
 
 def normalize_categories():
+    """Return dict of {folder_key: {name: display_name}}.
+    Media type (movie/show) is now auto-detected by scanner based on file structure.
+    Any old 'type' field in config is ignored for forward compatibility.
+    """
     cfg = load_config()
     raw = cfg.get("categories", {"Movies": "电影", "TV Shows": "剧集", "Anime": "动漫"})
     out = {}
     for key, val in raw.items():
         if isinstance(val, str):
-            out[key] = {"name": val, "type": "show" if key.lower() != "movies" else "movie"}
+            out[key] = {"name": val}
         else:
-            out[key] = val
+            out[key] = {"name": val.get("name", key)}
     return out
