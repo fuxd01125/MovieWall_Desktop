@@ -111,7 +111,7 @@ function renderCastSection(cast) {
   if (!cast || !cast.length) return '';
   return '<section class="section cast-section">'
     + '<div class="section-header"><h2>演员</h2><small>' + cast.length + ' 人</small></div>'
-    + '<div class="row-shell"><div class="row-scroll cast-scroll">'
+    + '<div class="cast-scroll">'
     + cast.map(c => {
       const p = c.person || {};
       const img = p.profile_url
@@ -124,7 +124,7 @@ function renderCastSection(cast) {
         + '<div class="cast-role">' + escapeHtml(c.character || c.job || '') + '</div>'
         + '</div></article>';
     }).join('')
-    + '</div></div></section>';
+    + '</div></section>';
 }
 
 async function openPerson(personId) {
@@ -147,15 +147,11 @@ function renderPersonDetail(data) {
   const aka = data.also_known_as && data.also_known_as.length
     ? '<div class="person-aka">又名: ' + data.also_known_as.map(n => escapeHtml(n)).join(' / ') + '</div>' : '';
 
-  // Independent top nav bar
-  const nav = '<div class="person-nav">'
-    + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回">'
+  // Hero section — back button + avatar + info
+  let hero = '<div class="person-hero">'
+    + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回" aria-label="返回">'
     + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
-    + '</button></div>';
-
-  // Hero section — avatar + info in unified area
-  let hero = '<div class="person-detail">'
-    + '<div class="person-hero">'
+    + '</button>'
     + '<div class="person-poster">' + img + '</div>'
     + '<div class="person-info">'
     + '<h1>' + escapeHtml(data.name || '') + '</h1>'
@@ -165,7 +161,7 @@ function renderPersonDetail(data) {
     + (data.place_of_birth ? '<div class="person-meta"><span class="meta-label">出生地</span> ' + escapeHtml(data.place_of_birth) + '</div>' : '')
     + aka
     + (data.biography ? '<div class="person-bio">' + escapeHtml(data.biography) + '</div>' : '')
-    + '</div></div></div>';
+    + '</div></div>';
 
   // Works section
   const works = data.works || [];
@@ -192,7 +188,7 @@ function renderPersonDetail(data) {
       + '</div></section>';
   }
 
-  app.innerHTML = nav + '<div class="person-page">' + hero + worksHtml + '</div>';
+  app.innerHTML = '<div class="person-page">' + hero + worksHtml + '</div>';
 }
 
 function startHistoryPolling() {
@@ -858,7 +854,7 @@ function renderDoubanTags(item) {
   return html;
 }
 
-function detailHero(item, bodyHtml) {
+function detailHero(item, bodyHtml, castHtml) {
   const bg = backdropUrl(item);
   const poster = tmdb(item).poster_url || artworkUrl(item, "poster") || artworkUrl(item, "thumb");
 
@@ -873,15 +869,18 @@ function detailHero(item, bodyHtml) {
 
   return pageBg
     + '<section class="detail-hero cinematic-detail">'
+    + '<div class="detail-hero-content">'
     + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回" aria-label="返回">'
     + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
     + '</button>'
-    + '<div class="detail-content">'
     + '<div class="detail-poster">'
     + (poster ? '<img src="' + poster + '" loading="lazy">' : '<div class="placeholder">' + escapeHtml(titleOf(item)) + '</div>')
     + '</div>'
-    + '<div class="detail-info">' + bodyHtml + '</div>'
-    + '</div></section>';
+    + '<div class="detail-info">' + bodyHtml
+    + (castHtml ? '<div class="detail-cast-inline">' + castHtml + '</div>' : '')
+    + '</div>'
+    + '</div>'
+    + '</section>';
 }
 
 function renderMovieDetail(item) {
@@ -902,26 +901,15 @@ function renderMovieDetail(item) {
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
     + renderDoubanTags(item)
-    + (overview ? '<div class="overview-wrap"><div class="overview" id="overview-' + item.id + '">' + escapeHtml(overview) + '</div><button class="overview-toggle" onclick="toggleOverview(\'' + item.id + '\',event)">展开</button></div>' : '')
+    + (overview ? '<div class="overview">' + escapeHtml(overview) + '</div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
     + more
-    + '</div>'
-    + renderCastSection(cast);
+    + '</div>';
 
-  app.innerHTML = detailHero(item, body);
-}
-
-function toggleOverview(id, event) {
-  if (event) event.stopPropagation();
-  const el = document.getElementById("overview-" + id);
-  if (!el) return;
-  const isExpanded = el.classList.toggle("expanded");
-  const btn = el.nextElementSibling;
-  if (btn && btn.classList.contains("overview-toggle")) {
-    btn.textContent = isExpanded ? "收起" : "展开";
-  }
+  const castHtml = renderCastSection(cast);
+  app.innerHTML = detailHero(item, body, castHtml);
 }
 
 function renderShowDetail(item) {
@@ -946,16 +934,16 @@ function renderShowDetail(item) {
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
     + renderDoubanTags(item)
-    + (overview ? '<div class="overview-wrap"><div class="overview" id="overview-' + item.id + '">' + escapeHtml(overview) + '</div><button class="overview-toggle" onclick="toggleOverview(\'' + item.id + '\',event)">展开</button></div>' : '')
+    + (overview ? '<div class="overview">' + escapeHtml(overview) + '</div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '')
     + (firstEntry ? '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(firstEp.ep.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '')
     + '<button class="cta-btn secondary' + (isFavorite(item.id) ? ' favorited' : '') + '" onclick="event.stopPropagation();toggleFavorite(\'' + item.id + '\')">' + (isFavorite(item.id) ? '♥' : '♡') + ' 收藏</button>'
     + more
-    + '</div>'
-    + renderCastSection(cast);
+    + '</div>';
 
+  const castHtml = renderCastSection(cast);
   const isExpanded = (snum) => expandedSeason === item.id + "|" + snum;
   const seasonCards = (item.seasons || []).map((s, i) => renderSeasonCard(item, s, isExpanded(s.season_number)));
 
@@ -978,7 +966,7 @@ function renderShowDetail(item) {
   }
 
   seasonHtml += '</section>';
-  app.innerHTML = detailHero(item, body) + seasonHtml;
+  app.innerHTML = detailHero(item, body, castHtml) + seasonHtml;
 }
 
 function findFirstEpisode(show) {
@@ -1101,7 +1089,7 @@ function renderSeasonDetail(show, season) {
     + '<div class="detail-primary-meta">' + metaParts.join('<span class="sep">·</span>') + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(show) + '</div>'
     + renderSeasonDoubanTags(show, season)
-    + (seasonSynopsis ? '<div class="overview-wrap"><div class="overview full">' + escapeHtml(seasonSynopsis) + '</div></div>' : '')
+    + (seasonSynopsis ? '<div class="overview">' + escapeHtml(seasonSynopsis) + '</div>' : '')
     + starRatingWidget(show)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + show.id + '\')">▶ 继续播放</button>' : '')
@@ -1111,7 +1099,7 @@ function renderSeasonDetail(show, season) {
     + more
     + '</div>';
 
-  app.innerHTML = detailHero(seasonHero, body)
+  app.innerHTML = detailHero(seasonHero, body, '')
     + '<section class="section">'
     + '<div class="section-header"><h2>剧集</h2><small>' + (season.episode_count || 0) + ' 集</small></div>'
     + '<div class="episode-list">'
@@ -1453,4 +1441,15 @@ document.addEventListener("click", (e) => {
 
 search.addEventListener("input", () => { moreMenuOpen = null; seasonMoreOpen = null; navStack = []; renderHome(); });
 window.addEventListener("keydown", e => { if (e.key === "Escape" && currentView.type !== "home") goBackSmart(); });
+
+// Mousewheel horizontal scroll for cast-scroll containers
+document.addEventListener("wheel", (e) => {
+  const scroll = e.target.closest(".cast-scroll");
+  if (!scroll) return;
+  if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+    e.preventDefault();
+    scroll.scrollLeft += e.deltaY;
+  }
+}, { passive: false });
+
 loadLibrary();

@@ -1105,11 +1105,10 @@ main {
 .detail-hero {
   position: relative;
   z-index: 1;
-  min-height: 520px;
   margin-top: 0;
   border: none;
   background: transparent;
-  padding-bottom: 0;
+  padding-bottom: 40px;
 }
 
 .cinematic-detail {
@@ -1117,24 +1116,29 @@ main {
   margin-right: -48px;
   border-left: 0;
   border-right: 0;
+  overflow: visible;
 }
 
-/* Content grid — unified hero: poster aligns with title top (F-flow) */
-.detail-content {
+/* Hero content grid — poster + info side by side */
+.detail-hero-content {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(200px, 280px) 1fr;
-  gap: 36px;
+  grid-template-columns: minmax(240px, 340px) 1fr;
+  gap: 40px;
   align-items: start;
-  min-height: 440px;
-  padding: 100px 48px 40px;
+  padding: 48px 48px 40px;
 }
 
-.detail-content,
-.detail-info { overflow: visible; }
+/* Back button within hero content */
+.detail-hero-content .back-hero-btn {
+  position: absolute;
+  top: 16px;
+  left: 4px;
+  z-index: 5;
+}
 
-/* Poster — sits naturally at top, no translateY offset */
+/* Poster — visual pillar, maintains aspect ratio */
 .detail-poster {
   overflow: hidden;
   border-radius: var(--radius);
@@ -1142,9 +1146,11 @@ main {
   aspect-ratio: 2/3;
   box-shadow: 0 8px 36px rgba(0,0,0,.55);
   transition: transform .3s ease, box-shadow .3s ease;
-  position: sticky;
-  top: 100px;
+  width: 100%;
 }
+
+.detail-hero-content,
+.detail-info { overflow: visible; }
 
 .detail-poster:hover {
   transform: translateY(-2px);
@@ -1158,7 +1164,27 @@ main {
   display: block;
 }
 
-.detail-info { min-width: 0; max-width: 800px; }
+.detail-info { min-width: 0; }
+
+/* Cast section inline within info area */
+.detail-cast-inline {
+  margin-top: 20px;
+}
+
+.detail-cast-inline .cast-section {
+  padding: 0;
+  margin-top: 0;
+  border: none;
+}
+
+.detail-cast-inline .cast-section .section-header {
+  margin-bottom: 10px;
+}
+
+.detail-cast-inline .cast-scroll {
+  padding-left: 0;
+  padding-right: 0;
+}
 
 .detail-info h1 {
   margin: 0;
@@ -1170,10 +1196,11 @@ main {
 }
 
 .detail-subtitle {
-  color: rgba(255,255,255,.5);
-  font-size: 14px;
-  margin-top: 4px;
+  color: rgba(255,255,255,.45);
+  font-size: 15px;
+  margin-top: 6px;
   font-weight: 400;
+  letter-spacing: .01em;
 }
 
 /* ── Meta row: year, rating, season/ep count ── */
@@ -1181,39 +1208,49 @@ main {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .detail-primary-meta .year {
-  color: rgba(255,255,255,.55);
-  font-size: 14px;
+  color: rgba(255,255,255,.6);
+  font-size: 15px;
+  font-weight: 500;
 }
 
 .detail-primary-meta .sep {
-  color: rgba(255,255,255,.15);
+  color: rgba(255,255,255,.2);
   font-size: 10px;
 }
 
 /* ── Tags row: genres + douban tags ── */
 .genre-tags {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin-top: 12px;
   max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 2px;
+}
+
+.genre-tags::-webkit-scrollbar {
+  display: none;
 }
 
 .genre-tag {
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: var(--radius-full);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  background: rgba(255,255,255,.06);
-  color: rgba(255,255,255,.6);
-  border: 1px solid rgba(255,255,255,.06);
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.7);
+  border: 1px solid rgba(255,255,255,.08);
   transition: background .15s, border-color .15s;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .genre-tag:hover {
@@ -1227,9 +1264,9 @@ main {
 .douban-meta { margin-top: 6px; }
 
 .douban-cast {
-  margin-top: 4px;
-  font-size: 12px;
-  color: rgba(255,255,255,.45);
+  margin-top: 6px;
+  font-size: 13px;
+  color: rgba(255,255,255,.5);
   line-height: 1.6;
 }
 
@@ -1242,41 +1279,13 @@ main {
 .douban-cast .cast-names { color: rgba(255,255,255,.5); }
 
 /* ── Overview / Synopsis ── */
-.overview-wrap {
-  position: relative;
-  margin-top: 14px;
-  max-width: 720px;
-}
-
 .overview {
-  color: rgba(255,255,255,.65);
-  font-size: 14px;
-  line-height: 1.7;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  margin-top: 16px;
+  color: rgba(255,255,255,.7);
+  font-size: 15px;
+  line-height: 1.75;
+  letter-spacing: .01em;
 }
-
-.overview.expanded {
-  -webkit-line-clamp: unset;
-  display: block;
-}
-
-.overview-toggle {
-  display: inline-block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(255,255,255,.4);
-  cursor: pointer;
-  transition: color .15s;
-  border: 0;
-  background: none;
-  padding: 2px 0;
-}
-
-.overview-toggle:hover { color: rgba(255,255,255,.7); }
 
 /* ── Star Rating ── */
 .star-rating {
@@ -2186,18 +2195,56 @@ mark {
   .row-scroll .card { min-width: 140px; width: 140px; }
 
   /* Detail mobile */
-  .detail-content {
+  .detail-hero-content {
     grid-template-columns: 1fr;
-    min-height: auto;
-    padding: 60px 20px 32px;
+    padding: 16px 16px 24px;
+    align-items: start;
   }
 
-  .detail-poster { max-width: 120px; }
-  .detail-hero { min-height: auto; }
+  .detail-hero-content .back-hero-btn {
+    top: 8px;
+    left: -4px;
+  }
+
+  .detail-poster {
+    max-width: 180px;
+    min-height: auto;
+    max-height: none;
+    aspect-ratio: 2/3;
+  }
+
+  .detail-hero {
+    min-height: auto;
+  }
 
   .cinematic-detail {
     margin-left: -16px;
     margin-right: -16px;
+  }
+
+  .cast-section {
+    padding: 0;
+  }
+
+  .cast-scroll {
+    padding: 4px 16px 8px;
+  }
+
+  .detail-cast-inline .cast-scroll {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .person-hero {
+    padding: 16px 16px 0;
+  }
+
+  .person-hero .back-hero-btn {
+    left: -8px;
+  }
+
+  .person-page .section {
+    padding: 0 16px;
   }
 
   /* Episodes mobile */
@@ -2272,17 +2319,24 @@ mark {
 
 .cast-section {
   margin-top: 8px;
+  padding: 0 48px;
 }
 
-.cast-section .cast-scroll {
+.cast-scroll {
   display: flex;
   gap: 10px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 4px 2px 8px;
+  padding: 4px 48px 8px;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
 }
+
+.cast-scroll::-webkit-scrollbar { height: 3px; }
+.cast-scroll::-webkit-scrollbar-track { background: transparent; }
+.cast-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.06); border-radius: 2px; }
+.cast-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.12); }
 
 .cast-card {
   min-width: 130px;
@@ -2359,35 +2413,27 @@ mark {
 
 .person-page {
   position: relative;
-  padding-top: 0;
+  padding: 0 0 40px;
 }
 
-.person-nav {
-  position: relative;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  height: 48px;
-  padding: 12px 24px 0;
-}
-
-.person-nav .back-hero-btn {
-  position: relative;
-  top: auto;
-  left: auto;
-}
-
-.person-detail {
-  position: relative;
-  z-index: 1;
-  padding: 20px 48px 0;
+.person-page .section {
+  padding: 0 48px;
   max-width: 960px;
 }
 
 .person-hero {
+  position: relative;
   display: flex;
   gap: 32px;
   align-items: flex-start;
+  padding: 16px 48px 0;
+}
+
+.person-hero .back-hero-btn {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  z-index: 5;
 }
 
 .person-poster {
@@ -2408,7 +2454,6 @@ mark {
 .person-info {
   flex: 1;
   min-width: 0;
-  max-width: 600px;
 }
 
 .person-info h1 {
@@ -2458,7 +2503,6 @@ mark {
   margin-top: 12px;
   max-height: 260px;
   overflow-y: auto;
-  max-width: 600px;
   padding-right: 8px;
 }
 
