@@ -69,27 +69,52 @@ def _cleanup_orphaned_entries(scanned_items):
             log.error("Failed to delete orphan: %s", orphan_id)
 
 
-def _detect_show_folder(folder):
+def _detect_show_folder(folder, cat_name=""):
     """Auto-detect if a subdirectory looks like a TV show based on file structure.
     Returns True if season subdirectories or episode-numbered filenames are found.
+    Considers multiple detection signals: season dirs, episode patterns, multi-video count.
     """
-    # Check for season subdirectories
+    folder_name = folder.name
+    # Signal 1: season subdirectories
     for p in folder.iterdir():
         if not p.is_dir():
             continue
         if re.search(r"Season\s*\d+", p.name, flags=re.I):
+            log.info("[SCAN] category=%s folder=%s detected_type=show reason=Season dir: %s", cat_name, folder_name, p.name)
             return True
         if re.search(r"第\s*\d+\s*季", p.name):
+            log.info("[SCAN] category=%s folder=%s detected_type=show reason=Season dir: %s", cat_name, folder_name, p.name)
             return True
         if re.search(r"第\s*[一二三四五六七八九十]+\s*季", p.name):
+            log.info("[SCAN] category=%s folder=%s detected_type=show reason=Season dir: %s", cat_name, folder_name, p.name)
             return True
-    # Check for episode patterns in filenames
+
+    # Signal 2: episode number patterns in filenames (S01E01, E01, 第X集, etc.)
     videos = [p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in VIDEO_EXTS]
     if not videos:
+        log.info("[SCAN] category=%s folder=%s detected_type=unknown reason=no video files found", cat_name, folder_name)
         return False
+
     ep_count = sum(1 for v in videos if parse_episode_number(v.name) > 0)
-    # If majority of videos have episode numbers, treat as show
-    return ep_count >= len(videos) * 0.5 if len(videos) > 1 else False
+    total = len(videos)
+
+    # Multiple videos with episode patterns → show
+    if total > 1 and ep_count >= total * 0.5:
+        log.info("[SCAN] category=%s folder=%s detected_type=show reason=%d/%d files have episode patterns", cat_name, folder_name, ep_count, total)
+        return True
+
+    # Single video with episode pattern → show (e.g. Running Man with S01E01 only)
+    if total == 1 and ep_count > 0:
+        log.info("[SCAN] category=%s folder=%s detected_type=show reason=single file with episode pattern: %s", cat_name, folder_name, videos[0].name)
+        return True
+
+    # Multiple videos, but few/no episode patterns → check structure
+    if total >= 3:
+        log.info("[SCAN] category=%s folder=%s detected_type=show reason=%d video files (multi-file heuristic)", cat_name, folder_name, total)
+        return True
+
+    log.info("[SCAN] category=%s folder=%s detected_type=movie reason=ep_count=%d/%d no season dirs", cat_name, folder_name, ep_count, total)
+    return False
 
 
 def _scan_single_movie(subfolder, cat_key, cat_name, videos=None):
@@ -234,7 +259,7 @@ def _scan_category(folder, cat_key, cat_name):
 
     movie_items = []
     for subfolder in dirs:
-        if _detect_show_folder(subfolder):
+        if _detect_show_folder(subfolder, cat_name):
             item = _scan_single_show(subfolder, cat_key, cat_name)
         else:
             item = _scan_single_movie(subfolder, cat_key, cat_name)
@@ -314,10 +339,15 @@ def scan_library(progress_callback=None):
     for idx, (folder_name, cat) in enumerate(existing_cats):
         folder = root / folder_name
         display = cat["name"]
+        log.info("[SCAN] category=%s folder_key=%s path=%s", display, folder_name, str(folder))
         if progress_callback:
             progress_callback(idx / total if total else 0, f"扫描: {display}")
 
         cat_items = _scan_category(folder, folder_name, display)
+        log.info("[SCAN] category=%s scanned=%d items (movies=%d shows=%d)",
+                 display, len(cat_items),
+                 sum(1 for i in cat_items if i["type"] == "movie"),
+                 sum(1 for i in cat_items if i["type"] == "show"))
 
         if cat_items:
             max_workers = min(5, len(cat_items))

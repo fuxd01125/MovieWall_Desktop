@@ -184,10 +184,9 @@ function showToast(msg, duration) {
 
 function renderCategoryTabs() {
   const catStats = library.stats?.categories || [];
+  // Only "全部" + dynamic categories from library data — no media_type tabs
   const tabs = [
     {key:"all", label:"全部"},
-    {key:"movie", label:"电影"},
-    {key:"show", label:"剧集"},
     ...catStats.map(c => ({key:"cat:" + c.key, label: c.name}))
   ];
   catTabs.innerHTML = tabs.map(t =>
@@ -441,12 +440,10 @@ function renderHome() {
   const hasQuery = search.value.trim().length > 0;
   const continueItems = hasQuery ? [] : getContinueItems();
 
-  // ── "全部" tab → Hero + Row layout ────────────
+  // ── "全部" tab → Hero + dynamic category row layout ────
   if (activeTab === "all" && !hasQuery) {
     const heroItem = pickHeroItem(items, continueItems, hasQuery);
 
-    const movies = items.filter(i => i.type === "movie");
-    const shows = items.filter(i => i.type === "show");
     const catStats = library.stats?.categories || [];
     const recent = [...items].sort((a, b) => (b.updated_at || b.created_at || 0) - (a.updated_at || a.created_at || 0)).slice(0, 20);
 
@@ -455,13 +452,7 @@ function renderHome() {
     if (continueItems.length > 0) {
       html += renderRowSection("继续观看", continueItems, renderContinueCard);
     }
-    if (movies.length > 0) {
-      html += renderRowSection("电影", movies, renderHomeCard, "movie");
-    }
-    if (shows.length > 0) {
-      html += renderRowSection("剧集", shows, renderHomeCard, "show");
-    }
-    // Dynamic category sections — any category from config appears automatically
+    // Dynamic category sections — ONLY from library.stats.categories, no media_type sections
     for (const cat of catStats) {
       const catItems = items.filter(i => i.category_key === cat.key);
       if (catItems.length > 0) {
@@ -476,10 +467,7 @@ function renderHome() {
     return;
   }
 
-  // ── Non-all tab or search → grid layout ─────
-  const gridMovies = items.filter(i => i.type === "movie");
-  const gridShows = items.filter(i => i.type === "show");
-  const gridOther = items.filter(i => i.type !== "movie" && i.type !== "show");
+  // ── Category-specific tab or search → grid layout ─────
   let html = '';
 
   if (continueItems.length > 0) {
@@ -495,21 +483,9 @@ function renderHome() {
       + '<div class="section-header"><h2>搜索结果</h2><small>' + items.length + ' 项</small></div>'
       + '<div class="grid">' + items.map(renderHomeCard).join('') + '</div></section>';
   } else {
-    if (gridMovies.length > 0) {
-      html += '<section class="section">'
-        + '<div class="section-header"><h2>电影</h2><small>' + gridMovies.length + ' 部</small></div>'
-        + '<div class="grid">' + gridMovies.map(renderHomeCard).join('') + '</div></section>';
-    }
-    if (gridShows.length > 0) {
-      html += '<section class="section">'
-        + '<div class="section-header"><h2>剧集</h2><small>' + gridShows.length + ' 部</small></div>'
-        + '<div class="grid">' + gridShows.map(renderHomeCard).join('') + '</div></section>';
-    }
-    if (gridOther.length > 0) {
-      html += '<section class="section">'
-        + '<div class="section-header"><h2>其他</h2></div>'
-        + '<div class="grid">' + gridOther.map(renderHomeCard).join('') + '</div></section>';
-    }
+    html += '<section class="section">'
+      + '<div class="section-header"><h2>' + escapeHtml(items[0]?.category_name || '') + '</h2><small>' + items.length + ' 项</small></div>'
+      + '<div class="grid">' + items.map(renderHomeCard).join('') + '</div></section>';
   }
 
   app.innerHTML = html;
@@ -518,11 +494,8 @@ function renderHome() {
 function getFilteredItems() {
   const q = search.value.trim().toLowerCase();
   return library.items.filter(item => {
-    if (activeTab === "movie") {
-      if (item.type !== "movie") return false;
-    } else if (activeTab === "show") {
-      if (item.type !== "show") return false;
-    } else if (activeTab.startsWith("cat:")) {
+    // Only category-based tab filtering — no media_type filtering
+    if (activeTab.startsWith("cat:")) {
       const catKey = activeTab.slice(4);
       if (item.category_key !== catKey) return false;
     }
@@ -546,11 +519,8 @@ function getContinueItems() {
   }
   const q = search.value.trim().toLowerCase();
   return items.filter(({item}) => {
-    if (activeTab === "movie") {
-      if (item.type !== "movie") return false;
-    } else if (activeTab === "show") {
-      if (item.type !== "show") return false;
-    } else if (activeTab.startsWith("cat:")) {
+    // Only category-based tab filtering — no media_type filtering
+    if (activeTab.startsWith("cat:")) {
       const catKey = activeTab.slice(4);
       if (item.category_key !== catKey) return false;
     }
