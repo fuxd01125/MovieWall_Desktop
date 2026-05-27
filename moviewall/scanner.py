@@ -300,15 +300,20 @@ def _scan_category(folder, cat_key, cat_name):
 
 
 def scan_library(progress_callback=None):
-    """Main scan entry point. Uses dynamic category detection.
-    All category folder keys from config are auto-discovered — no hardcoded names.
+    """Main scan entry point. Auto-discovers all first-level subdirectories
+    under library_root — no config.categories dependency.
+
+    Display names are optionally mapped via config; otherwise the directory
+    name is used as-is. Any new folder added to library_root is automatically
+    discovered and scanned without config changes.
     """
     cfg = load_config()
     root = Path(cfg.get("library_root", "")).expanduser()
     if not root.exists():
         return {"items": [], "stats": {}, "error": f"根目录不存在：{root}"}
 
-    categories = normalize_categories()
+    # Display name mapping from config (optional — only for friendly names)
+    display_map = normalize_categories()
     t = Timer("scan_library")
     t.__enter__()
     stats = {"movies": 0, "shows": 0, "episodes": 0}
@@ -332,14 +337,23 @@ def scan_library(progress_callback=None):
     else:
         log.info("Incremental scan skipped: no mtime change since last scan")
 
-    existing_cats = [(fn, cat) for fn, cat in categories.items() if (root / fn).exists()]
-    total = len(existing_cats)
+    # ── Auto-discover all first-level subdirectories ────────────────
+    dir_names = sorted([d.name for d in root.iterdir() if d.is_dir()],
+                       key=lambda n: n.lower())
+    log.info("[SCAN] library_root=%s discovered=%d directories: %s",
+             str(root), len(dir_names), dir_names)
+    total = len(dir_names)
 
     all_items = []
-    for idx, (folder_name, cat) in enumerate(existing_cats):
+    for idx, folder_name in enumerate(dir_names):
         folder = root / folder_name
-        display = cat["name"]
-        log.info("[SCAN] category=%s folder_key=%s path=%s", display, folder_name, str(folder))
+        # Display name: config mapping → fallback to directory name
+        display = display_map.get(folder_name, {}).get("name", folder_name)
+
+        if display != folder_name:
+            log.info("[DISPLAY NAME MAP] folder=%s mapped_name=%s", folder_name, display)
+        log.info("[DISCOVER CATEGORY] folder=%s display_name=%s", folder_name, display)
+
         if progress_callback:
             progress_callback(idx / total if total else 0, f"扫描: {display}")
 
