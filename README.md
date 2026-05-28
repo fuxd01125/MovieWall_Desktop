@@ -64,6 +64,11 @@ MovieWall 并不是一个视频在线播放器。
   <p><em>剧集详情页</em></p>
 </div>
 
+<div align="center">
+  <img src="./screenshots/season_episode.png" alt="剧集详情页" width="100%"/>
+  <p><em>剧集季集展开</em></p>
+</div>
+
 ---
 
 ## 快速开始
