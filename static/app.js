@@ -276,7 +276,8 @@ function renderCategoryTabs() {
   // Only "全部" + dynamic categories from library data — no media_type tabs
   const tabs = [
     {key:"all", label:"全部"},
-    ...catStats.map(c => ({key:"cat:" + c.key, label: c.name}))
+    ...catStats.map(c => ({key:"cat:" + c.key, label: c.name})),
+    {key:"favorites", label:"收藏"}
   ];
   catTabs.innerHTML = tabs.map(t =>
     '<button class="cat-tab' + (activeTab === t.key ? ' active' : '') + '" onclick="setTab(\'' + t.key + '\')">' + t.label + '</button>'
@@ -525,7 +526,8 @@ function renderHome() {
 
   const items = getFilteredItems();
   if (!items.length) {
-    app.innerHTML = '<section class="section"><div class="empty">没有匹配的内容。试试其他分类或搜索词。</div></section>';
+    const emptyMsg = activeTab === "favorites" ? "暂无收藏内容" : "没有匹配的内容。试试其他分类或搜索词。";
+    app.innerHTML = '<section class="section"><div class="empty">' + emptyMsg + '</div></section>';
     return;
   }
 
@@ -543,6 +545,11 @@ function renderHome() {
 
     if (continueItems.length > 0) {
       html += renderRowSection("继续观看", continueItems, renderContinueCard);
+    }
+    // Favorites row
+    const favItems = items.filter(i => favoritesCache.includes(i.id));
+    if (favItems.length > 0) {
+      html += renderRowSection("收藏", favItems, renderHomeCard, "favorites");
     }
     // Dynamic category sections — ONLY from library.stats.categories, no media_type sections
     for (const cat of catStats) {
@@ -575,8 +582,9 @@ function renderHome() {
       + '<div class="section-header"><h2>搜索结果</h2><small>' + items.length + ' 项</small></div>'
       + '<div class="grid">' + items.map(renderHomeCard).join('') + '</div></section>';
   } else {
+    const sectionTitle = activeTab === "favorites" ? "收藏" : escapeHtml(items[0]?.category_name || '');
     html += '<section class="section">'
-      + '<div class="section-header"><h2>' + escapeHtml(items[0]?.category_name || '') + '</h2><small>' + items.length + ' 项</small></div>'
+      + '<div class="section-header"><h2>' + sectionTitle + '</h2><small>' + items.length + ' 项</small></div>'
       + '<div class="grid">' + items.map(renderHomeCard).join('') + '</div></section>';
   }
 
@@ -586,6 +594,10 @@ function renderHome() {
 function getFilteredItems() {
   const q = search.value.trim().toLowerCase();
   return library.items.filter(item => {
+    // Favorites tab — only show favorited items
+    if (activeTab === "favorites") {
+      return favoritesCache.includes(item.id);
+    }
     // Only category-based tab filtering — no media_type filtering
     if (activeTab.startsWith("cat:")) {
       const catKey = activeTab.slice(4);
@@ -641,24 +653,10 @@ function primaryPlayAction(item) {
 }
 
 function renderCardOverlay(item) {
-  const t = tmdb(item);
-  const d = douban(item);
-  const genres = (t.genres || []).slice(0, 2);
-  const hist = getItemHistory(item);
-  const typeLabel = item.type === "show" ? ((item.season_count || 0) + " 季") : "电影";
-  let metaHtml = '';
-  if (item.year) metaHtml += '<span class="rating-badge sm">' + escapeHtml(item.year) + '</span>';
-  if (d.rating) metaHtml += '<span class="rating-badge sm douban">豆 ' + Number(d.rating).toFixed(1) + '</span>';
-  else if (t.rating) metaHtml += renderRatingBadge(t.rating, {sm:true});
-  if (genres.length) metaHtml += genres.map(g => '<span class="rating-badge sm" style="background:rgba(255,255,255,.08);color:var(--muted);font-weight:500">' + escapeHtml(g) + '</span>').join('');
   return '<div class="card-overlay">'
     + '<div class="poster-actions">'
     + '<button class="poster-play" onclick="event.stopPropagation();' + primaryPlayAction(item) + '" title="播放">▶</button>'
-    + '<button class="poster-info" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')" title="详情">i</button>'
     + '</div>'
-    + '<div class="card-meta">' + metaHtml + '</div>'
-    + '<div class="card-overlay-title">' + escapeHtml(titleOf(item)) + '</div>'
-    + '<div class="card-overlay-subtitle">' + (hist ? '继续观看' : escapeHtml(typeLabel)) + '</div>'
     + '</div>';
 }
 
@@ -711,10 +709,7 @@ function renderContinueCard(entry) {
       ? '<img src="' + artworkUrl(item, "poster") + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder\\\'>' + escapeHtml(title) + '</div>\'">'
       : '<div class="placeholder">' + escapeHtml(title) + '</div>')
     + '<div class="card-overlay">'
-    + '<div class="poster-actions"><button class="poster-play" onclick="event.stopPropagation();playMedia(\'' + escapeJs(hist.path) + '\',' + histEntry + ')" title="继续播放">▶</button><button class="poster-info" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')" title="详情">i</button></div>'
-    + '<div class="card-meta"><span class="rating-badge sm">' + escapeHtml(epContext) + '</span></div>'
-    + '<div class="card-overlay-title">' + escapeHtml(title) + '</div>'
-    + '<div class="card-overlay-subtitle">继续观看</div>'
+    + '<div class="poster-actions"><button class="poster-play" onclick="event.stopPropagation();playMedia(\'' + escapeJs(hist.path) + '\',' + histEntry + ')" title="继续播放">▶</button></div>'
     + '</div>'
     + (progressPct > 0 ? '<div class="card-progress"><div class="card-progress-bar" style="width:' + progressPct + '%"></div></div>' : '')
     + '</div>'
