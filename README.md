@@ -6,55 +6,44 @@
 
 本地影视海报墙桌面应用，打造类似 Netflix / Jellyfin 的本地流媒体浏览体验。
 
-MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 TMDB + 豆瓣双数据源获取元数据，生成流媒体风格海报墙界面，支持调用 PotPlayer / VLC 等外部播放器进行播放。
+MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 TMDB 数据源获取元数据，生成流媒体风格海报墙界面，支持调用 PotPlayer / VLC 等外部播放器进行播放。
 
 ---
 
-# ✨ 功能特性
+## 功能特性
 
-* 🎬 流媒体风格本地影视海报墙
-* 📁 自动扫描电影 / 剧集 / 动漫
-* 🌐 TMDB ~~+ 豆瓣双元~~数据源
-* 🖼️ 自动海报匹配与缩略图生成
-* 📺 Season / Episode 完整支持
-* ⭐ 独立用户评分系统
-* ❤️ 收藏与播放历史记录
-* ▶️ PotPlayer / VLC 外部播放器联动
-* 🧠 自动识别剧集命名格式
-* 💾 SQLite 本地数据库
-* ⚡ Flask + pywebview 轻量桌面架构
-* 📦 PyInstaller 单文件 EXE 打包
+- 流媒体风格本地影视海报墙
+- 自动目录发现系统 — 无需配置即可自动扫描所有子目录
+- 动态分类系统 — 基于目录结构自动推断分类，无需硬编码
+- TMDB 元数据独立落表 — season / episode / people / credits 独立存储
+- 演员系统 — 支持演员详情页、作品列表
+- 智能剧集结构识别 — 自动检测 Season / Episode 结构
+- 独立用户评分系统
+- 收藏功能与收藏分类 Tab
+- 播放历史记录
+- PotPlayer / VLC 外部播放器联动
+- SQLite 本地数据库
+- Flask + pywebview 轻量桌面架构
+- PyInstaller 单文件 EXE 打包
 
 ---
 
-# 🧠 项目定位
+## 项目定位
 
 MovieWall 并不是一个视频在线播放器。
 
 它更偏向于：
 
-* 本地媒体管理系统
-* 流媒体风格影视墙
-* 轻量 HTPC 前端
-* Jellyfin / Emby 风格桌面应用
+- 本地媒体管理系统
+- 流媒体风格影视墙
+- 轻量 HTPC 前端
+- Jellyfin / Emby 风格桌面应用
 
-项目专注于：
-
-* 本地影视整理
-* 海报墙展示
-* 元数据管理
-* 外部播放器联动
-
-而不是视频解码本身。
-
-视频播放由成熟播放器负责，例如：
-
-* PotPlayer
-* VLC
+项目专注于本地影视整理、海报墙展示、元数据管理、外部播放器联动，而不是视频解码本身。
 
 ---
 
-# 📸 应用展示
+## 应用展示
 
 <div align="center">
   <img src="./screenshots/home.png" alt="首页海报墙" width="100%"/>
@@ -65,7 +54,7 @@ MovieWall 并不是一个视频在线播放器。
 
 <div align="center">
   <img src="./screenshots/category.png" alt="分类界面" width="100%"/>
-  <p><em>分类界面 - 按电影/剧集/动漫分类浏览</em></p>
+  <p><em>分类界面 - 按目录分类浏览</em></p>
 </div>
 
 <br/>
@@ -77,154 +66,55 @@ MovieWall 并不是一个视频在线播放器。
 
 ---
 
-# 🚀 快速开始
+## 快速开始
 
-## 1. 安装依赖
+### 1. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-或双击：
+或双击 `Install_Dependencies.bat`。
 
-```text
-Install_Dependencies.bat
-```
+### 2. 配置应用
 
----
-
-## 2. 配置应用
-
-首次运行前，需要创建并编辑：
-
-```text
-config.json
-```
-
-执行：
+首次运行前，创建并编辑 `config.json`：
 
 ```bash
 copy config.example.json config.json
 ```
 
-然后编辑配置：
+| 配置项 | 默认值 | 说明 |
+|---|---|---|
+| library_root | — | 影视媒体根目录 |
+| categories | {} | 分类显示名映射（可选） |
+| players | [] | 播放器列表 |
+| tmdb_api_key | — | TMDB API Key |
+| tmdb_language | zh-CN | 元数据语言 |
+| metadata_cache_days | 60 | 元数据缓存 TTL |
+| generate_thumbnails | true | 是否生成缩略图 |
+| thumbnail_second | 60 | 缩略图生成时间点 |
+| ffmpeg_path | ffmpeg | ffmpeg 路径 |
+| history_limit | 500 | 最大历史记录数 |
+| potplayer_dpl_path | — | PotPlayer dpl 路径 |
 
-```json
-{
-  "library_root": "F:\\Download\\影视",
+> **注意**：`categories` 现在仅做显示名映射，新目录无需修改配置即可自动扫描和显示。
 
-  "categories": {
-    "Movies": "电影",
-    "TV Shows": "剧集",
-    "Anime": "动漫"
-  },
+### 3. 运行应用
 
-  "players": [
-    {
-      "name": "PotPlayer",
-      "path": "C:\\Program Files\\PotPlayer\\PotPlayerMini64.exe"
-    },
-    {
-      "name": "VLC",
-      "path": "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
-    }
-  ],
+**桌面模式（推荐）**：运行 `release/dist/MovieWall.exe`
 
-  "generate_thumbnails": true,
-  "thumbnail_second": 60,
-
-  "metadata_enabled": true,
-  "tmdb_api_key": "your_tmdb_api_key_here",
-  "tmdb_language": "zh-CN",
-  "metadata_cache_days": 60,
-
-  "douban_enabled": true,
-  "douban_id_overrides": {},
-
-  "ffmpeg_path": "ffmpeg",
-
-  "log_level": "INFO",
-  "enable_file_log": true,
-
-  "history_limit": 500,
-
-  "potplayer_dpl_path": "C:\\Program Files\\PotPlayer\\Playlist\\PotPlayerMini64.dpl"
-}
-```
-
----
-
-# ⚙️ 配置项说明
-
-| 配置项                 | 默认值    | 说明               |
-| ------------------- | ------ | ---------------- |
-| library_root        | —      | 影视媒体根目录          |
-| categories          | 见上     | 分类定义             |
-| players             | []     | 播放器列表            |
-| tmdb_api_key        | —      | TMDB API Key     |
-| tmdb_language       | zh-CN  | 元数据语言            |
-| metadata_cache_days | 60     | 元数据缓存 TTL        |
-| douban_enabled      | true   | 是否启用豆瓣           |
-| generate_thumbnails | true   | 是否生成缩略图          |
-| thumbnail_second    | 60     | 缩略图生成时间点         |
-| ffmpeg_path         | ffmpeg | ffmpeg 路径        |
-| history_limit       | 500    | 最大历史记录数          |
-| potplayer_dpl_path  | —      | PotPlayer dpl 路径 |
-
----
-
-# 🔑 TMDB API Key 获取
-
-TMDB API Key 可免费申请：
-
-<a href="https://www.themoviedb.org/settings/api" target="_blank">
-  <img src="https://img.shields.io/badge/✨_Free_TMDB_API_Key-000?style=for-the-badge&logo=themoviedatabase&logoColor=01b4e4&labelColor=black" alt="TMDB API">
-</a>
-
-获取后填入：
-
-```json
-"tmdb_api_key": "your_tmdb_api_key_here"
-```
-
----
-
-# ▶️ 运行应用
-
-## 桌面模式（推荐）
-修改`config.json` 后直接运行：
-
-```text
-release/dist/MovieWall.exe
-```
-
----
-
-## 开发模式
+**开发模式**：
 
 ```bash
 python run.py
 ```
 
-启动后打开浏览器：
-
-```text
-http://127.0.0.1:5000
-```
+启动后打开浏览器访问 `http://127.0.0.1:5000`
 
 ---
 
-# 📦 打包 EXE
-
-使用 `Build_EXE.bat`, 输出目录：
-
-```text
-release/dist/
-```
-
----
-
-# 📂 影视目录规范
+## 影视目录规范
 
 推荐目录结构：
 
@@ -232,199 +122,43 @@ release/dist/
 F:/Download/影视
 ├── Movies/
 │   └── Zootopia 2 (2025)/
-│       ├── Zootopia 2 (2025).mkv
-│       └── poster.jpg
+│       └── Zootopia 2 (2025).mkv
 │
 ├── TV Shows/
 │   └── 汉尼拔/
-│       ├── poster.jpg
 │       └── Season 01/
-│           ├── Hannibal S01E01.mkv
-│           └── poster.jpg
+│           └── Hannibal S01E01.mkv
 │
-└── Anime/
-    └── 葬送的芙莉莲 (2023)/
-        └── Season 01/
-            ├── Frieren - S01E29.mkv
-            └── Frieren - S01E30.mkv
+└── 纪录片/
+    └── ...（无需配置，自动发现）
 ```
 
-说明：
-
-* `poster.jpg` 为本地海报（可选）
-* 本地海报优先级高于 TMDB 海报
-* 推荐使用规范化目录命名
+> 新目录放入 `library_root` 后会自动发现并显示
 
 ---
 
-# 🔍 媒体扫描规则
+## 媒体扫描逻辑
 
-## 电影
-
-* 每个子文件夹识别为一部电影
-* 根目录下单独视频文件也会识别为电影
-
----
-
-## 剧集 / 动漫
-
-* 子文件夹识别为剧集
-* `Season *` 子文件夹识别为季
-* 自动建立 Season / Episode 结构
+- **电影**：每个子文件夹识别为一部电影；根目录下单独视频文件也会识别
+- **剧集**：子文件夹识别为剧集，`Season *` 子文件夹识别为季，自动建立 Season / Episode 结构
+- **自动推断**：基于文件结构自动区分 movie / show，无需手动指定 media_type
 
 ---
 
-# 📺 剧集命名识别
+## 剧集命名识别
 
-支持以下格式：
-
-```text
-S01E01
-E01
-第1集
-第 1 集
-```
-
-以及常见：
-
-* 美剧
-* 日剧
-* 番剧
-* 动漫
-
-命名格式。
-
-建议尽量使用规范命名方式，以提升识别准确率。
+支持格式：`S01E01`、`E01`、`第1集`、`第 1 集`、中文数字（十一~九十九）
 
 ---
 
-# 🎞️ 支持视频格式
+## 已知问题
 
-支持常见视频格式：
-
-* mp4
-* mkv
-* avi
-* mov
-* flv
-* ts
-
-实际支持能力取决于外部播放器。
+- 豆瓣元数据匹配存在局限（非官方 API，可能匹配错误）
+- 特殊命名格式（SP / OVA / 多语言混合）可能降低识别准确率
+- 首次扫描较慢（媒体识别 + TMDB 请求 + 缩略图生成 + 缓存建立）
 
 ---
 
-
-# 🛠️ 常见问题
-
-## PotPlayer 播放记录无法同步
-
-请确认：
-
-```json
-"potplayer_dpl_path": ""
-```
-
-路径填写正确，并且 PotPlayer 已开启播放历史记录。
-
----
-
-## 缩略图生成失败
-
-请检查：
-
-* 已正确安装 ffmpeg
-* `ffmpeg_path` 配置正确
-* 视频文件可正常播放
-
----
-
-## TMDB 无法获取数据
-
-请检查：
-
-* `tmdb_api_key` 是否正确
-* 网络是否可访问 TMDB
-* API 请求额度是否超限
-
----
-
-# ⚠️ 当前已知问题
-
-## 豆瓣元数据匹配存在局限
-
-由于豆瓣不存在稳定公开 API，目前项目使用非官方方式获取数据。
-
-在部分情况下可能出现：
-
-* 多季剧集匹配错误
-* 同名影视识别错误
-* 季简介复用错误
-* 豆瓣评分更新失败
-* 网络环境导致抓取失败
-
-TMDB 通常用于：
-
-* 海报
-* 季结构
-* 剧集信息
-
-豆瓣通常用于：
-
-* 中文简介
-* 中文评分
-* 演员信息
-
-两者数据偶尔可能存在差异。
-
----
-
-## 特殊命名格式可能影响识别
-
-以下情况可能降低识别准确率：
-
-* 文件名缺少集数
-* 特别篇 / SP / OVA
-* 多语言混合命名
-* 无码番剧命名
-* 缺少年份
-* 同名影视作品
-
-建议尽量使用规范命名格式。
-
----
-
-## 首次扫描速度可能较慢
-
-首次扫描会执行：
-
-* 媒体识别
-* TMDB 请求
-* 豆瓣匹配
-* 缩略图生成
-* 本地缓存建立
-
-大型媒体库属于正常现象。
-
----
-
-# 🚧 Roadmap
-
-未来计划：
-
-* [ ] 更精准的剧集匹配算法
-* [ ] 后端支持剧集多类型分类
-- [ ] 优化 TMDB / 豆瓣 数据问题
-- [ ] 改进动漫与剧集分类逻辑
-- [ ] 支持按评分排序
-- [ ] 支持按 Tag / 类型筛选
-- [ ] 支持 NFO 元数据解析
-- [ ] 添加演员信息与演员页
-- [ ] 完善收藏功能与收藏分类
-- [ ] 支持更多媒体信息展示（分辨率 / 编码 / 时长等）
-- [ ] 完善设置功能，将 config 与前端联动
-
----
-
-# 📄 License
+## License
 
 This project is licensed under the MIT License.
