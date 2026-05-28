@@ -1,4 +1,5 @@
 """Flask routes — API endpoints backed by SQLite database."""
+import json
 import os
 import subprocess
 import threading
@@ -12,8 +13,7 @@ from moviewall.log import log
 from moviewall.database import (
     build_library_dict, load_all_ratings, load_all_history, load_all_favorites,
     save_rating, delete_rating, save_history, toggle_favorite,
-    load_tmdb_meta, load_douban_meta, save_douban_meta, save_tmdb_meta,
-    get_conn,
+    save_douban_meta, get_conn,
 )
 from moviewall.douban import fetch_douban_by_id, set_douban_id_override
 from moviewall.scanner import scan_library
@@ -26,58 +26,10 @@ _scan_lock = threading.Lock()
 
 
 def find_media_by_id(media_id):
-    from moviewall.database import scrub_rows, load_douban_season_meta
-    conn = get_conn()
-    try:
-        row = conn.execute("SELECT * FROM media WHERE id=?", (media_id,)).fetchone()
-    except Exception:
-        raise
-    finally:
-        conn.close()
-    if row is None:
-        return None
-    item = dict(row)
-    item["type"] = item.pop("media_type")
-    meta = {}
-    tmdb = load_tmdb_meta(media_id)
-    douban = load_douban_meta(media_id)
-    if tmdb:
-        meta["tmdb"] = tmdb
-    if douban:
-        meta["douban"] = douban
-        # API-layer fallback: Douban synopsis when TMDB overview empty
-        # (avoids metadata pollution at DB layer)
-        if tmdb and not tmdb.get("overview", "").strip() and douban.get("synopsis", "").strip():
-            meta["tmdb"] = dict(tmdb)
-            meta["tmdb"]["overview"] = douban["synopsis"]
-    item["metadata"] = meta
-    if item["type"] == "show":
-        conn2 = get_conn()
-        try:
-            seasons = scrub_rows(conn2.execute(
-                "SELECT * FROM seasons WHERE show_id=? ORDER BY season_number", (media_id,)
-            ).fetchall())
-            ds = load_douban_season_meta(media_id)
-            season_tmdb = tmdb.get("_season_data", {}) if tmdb else {}
-            for s in seasons:
-                s["episodes"] = scrub_rows(conn2.execute(
-                    "SELECT * FROM episodes WHERE season_id=? ORDER BY episode_number", (s["id"],)
-                ).fetchall())
-                ssn = str(s.get("season_number", ""))
-                s_meta = ds.get(ssn, {})
-                if s_meta:
-                    s["douban"] = s_meta
-                st = season_tmdb.get(ssn, {})
-                if st:
-                    s["tmdb"] = st
-            if ds:
-                item["_season_meta"] = ds
-        except Exception:
-            raise
-        finally:
-            conn2.close()
-        item["seasons"] = seasons
-    return item
+    for item in build_library_dict().get("items", []):
+        if item.get("id") == media_id:
+            return item
+    return None
 
 
 def is_allowed_media_path(path):
@@ -416,6 +368,84 @@ def register_routes(app):
             return jsonify({"ok": False, "error": "缺少 media_id"}), 400
         action = toggle_favorite(media_id)
         return jsonify({"ok": True, "action": action})
+
+    @app.route("/api/person/<person_id>")
+    def api_person(person_id):
+        """Return person details plus all local media they appear in."""
+        conn = get_conn()
+        try:
+            person = conn.execute("SELECT * FROM people WHERE id=?", (person_id,)).fetchone()
+            if not person:
+                abort(404)
+            person_dict = dict(person)
+
+            # Parse raw JSON and also try TMDB person fetch for full details
+            raw = person_dict.get("raw")
+            raw_data = {}
+            if raw:
+                try:
+                    raw_data = json.loads(raw) if isinstance(raw, str) else {}
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # Try to fetch full person details from TMDB if not in raw
+            source_id = person_dict.get("source_id", "").strip()
+            tmdb_key = (load_config().get("tmdb_api_key") or "").strip()
+            if source_id and tmdb_key:
+                try:
+                    import urllib.request
+                    url = f"https://api.themoviedb.org/3/person/{source_id}?language={load_config().get('tmdb_language', 'zh-CN')}&api_key={tmdb_key}"
+                    req = urllib.request.Request(url, headers={"User-Agent": "MovieWall/15"})
+                    with urllib.request.urlopen(req, timeout=8) as resp:
+                        tmdb_person = json.loads(resp.read().decode("utf-8"))
+                        if tmdb_person.get("name"):
+                            person_dict["biography"] = tmdb_person.get("biography", "")
+                            person_dict["birthday"] = tmdb_person.get("birthday", "")
+                            person_dict["deathday"] = tmdb_person.get("deathday", "")
+                            person_dict["place_of_birth"] = tmdb_person.get("place_of_birth", "")
+                            person_dict["also_known_as"] = tmdb_person.get("also_known_as", [])
+                            person_dict["homepage"] = tmdb_person.get("homepage", "")
+                            # Update profile_url with higher-res version if available
+                            if tmdb_person.get("profile_path"):
+                                person_dict["profile_url"] = f"https://image.tmdb.org/t/p/w500{tmdb_person['profile_path']}"
+                            raw_data = tmdb_person  # Use full data
+                except Exception as e:
+                    log.warning("TMDB person fetch failed for %s: %s", source_id, e)
+
+            # Fallback to raw credit data fields if TMDB fetch failed
+            if not person_dict.get("biography"):
+                person_dict["biography"] = raw_data.get("biography", "")
+            if not person_dict.get("birthday"):
+                person_dict["birthday"] = raw_data.get("birthday", "")
+            if not person_dict.get("deathday"):
+                person_dict["deathday"] = raw_data.get("deathday", "")
+            if not person_dict.get("place_of_birth"):
+                person_dict["place_of_birth"] = raw_data.get("place_of_birth", "")
+            if not person_dict.get("also_known_as"):
+                person_dict["also_known_as"] = raw_data.get("also_known_as", [])
+
+            person_dict.pop("raw", None)
+            person_dict.pop("updated_at", None)
+
+            # Credits joined with media for works list — deduplicate by media_id
+            works = conn.execute("""
+                SELECT c.scope, c.character, c.job, c.department,
+                       m.id as media_id, m.title as media_title, m.media_type,
+                       m.poster, m.year,
+                       COALESCE(m.display_title, m.title) as display_title
+                FROM credits c
+                JOIN media m ON m.id = c.media_id
+                WHERE c.person_id = ?
+                GROUP BY m.id
+                ORDER BY m.title COLLATE NOCASE
+            """, (person_id,)).fetchall()
+            person_dict["works"] = [dict(w) for w in works]
+
+        except Exception:
+            raise
+        finally:
+            conn.close()
+        return jsonify(person_dict)
 
     @app.route("/api/metadata/douban/<media_id>", methods=["PUT"])
     def api_set_douban_id(media_id):

@@ -539,13 +539,14 @@ main {
 
 .card-overlay {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  padding: 14px;
-  background:
-    linear-gradient(180deg, rgba(0,0,0,.1) 20%, rgba(0,0,0,.5) 55%, rgba(0,0,0,.9) 100%);
+  justify-content: center;
+  align-items: center;
   opacity: 0;
   transition: opacity .3s ease;
   pointer-events: none;
@@ -554,77 +555,37 @@ main {
 .card-overlay * { pointer-events: auto; }
 .card:hover .card-overlay { opacity: 1; }
 
-.card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 8px;
-}
-
-.card-overlay-title {
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1.3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-shadow: 0 2px 10px rgba(0,0,0,.8);
-}
-
-.card-overlay-subtitle {
-  margin-top: 3px;
-  color: rgba(255,255,255,.55);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-/* ----- Poster Action Buttons (play / info) ----- */
+/* ----- Poster Play Button ----- */
 
 .poster-actions {
   position: absolute;
-  left: 12px;
-  top: 12px;
+  inset: 0;
   z-index: 4;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 12px;
 }
 
-.poster-play, .poster-info {
-  width: 34px;
-  height: 34px;
+.poster-play {
+  width: 52px;
+  height: 52px;
   padding: 0;
   border-radius: 50%;
   display: grid;
   place-items: center;
   box-shadow: var(--shadow-lg);
   font-weight: 900;
-  font-size: 14px;
-  transition: transform .25s var(--ease-spring), box-shadow .25s ease;
-}
-
-.poster-play {
+  font-size: 20px;
   background: #fff;
   color: #0a0a0c;
+  transition: transform .25s var(--ease-spring), box-shadow .25s ease;
+  flex-shrink: 0;
 }
 
 .poster-play:hover {
-  transform: scale(1.1);
-  box-shadow: 0 8px 28px rgba(255,255,255,.15);
-}
-
-.poster-info {
-  background: rgba(255,255,255,.12);
-  color: #fff;
-  border: 1px solid rgba(255,255,255,.15);
-  font-family: Georgia, serif;
-  font-style: italic;
-}
-
-.poster-info:hover {
-  background: rgba(255,255,255,.2);
-  transform: scale(1.1);
-  box-shadow: none;
+  transform: scale(1.12);
+  box-shadow: 0 8px 28px rgba(255,255,255,.2);
 }
 
 /* ----- Card Progress Bar ----- */
@@ -650,8 +611,8 @@ main {
 
 .fav-badge {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  bottom: 10px;
+  right: 10px;
   z-index: 5;
   width: 28px;
   height: 28px;
@@ -791,24 +752,24 @@ main {
   to { transform: scale(1.07) translate3d(-1%, .6%, 0); }
 }
 
-/* Gradient overlay: full 100vh — from transparent image down to solid dark bg.
-   Horizontal layer darkens the left side for title readability. */
+/* Gradient overlay: 120vh to cover hero fully with smooth falloff.
+   Left-heavy for title readability. */
 .page-backdrop-overlay {
   position: absolute;
   inset: 0;
   background:
     linear-gradient(to bottom,
-      transparent 0%,
-      rgba(10,10,12, 0.06) 20%,
-      rgba(10,10,12, 0.28) 42%,
-      rgba(10,10,12, 0.58) 60%,
-      rgba(10,10,12, 0.82) 78%,
+      rgba(10,10,12, 0.10) 0%,
+      rgba(10,10,12, 0.22) 18%,
+      rgba(10,10,12, 0.40) 38%,
+      rgba(10,10,12, 0.65) 55%,
+      rgba(10,10,12, 0.85) 72%,
       #0a0a0c 100%),
     linear-gradient(to right,
       rgba(10,10,12, 0.92) 0%,
-      rgba(10,10,12, 0.48) 32%,
-      transparent 55%,
-      rgba(10,10,12, 0.52) 100%);
+      rgba(10,10,12, 0.55) 30%,
+      rgba(10,10,12, 0.10) 55%,
+      rgba(10,10,12, 0.50) 100%);
 }
 
 /* =================================================================
@@ -1105,10 +1066,10 @@ main {
 .detail-hero {
   position: relative;
   z-index: 1;
-  min-height: 480px;
   margin-top: 0;
   border: none;
   background: transparent;
+  padding-bottom: 40px;
 }
 
 .cinematic-detail {
@@ -1116,31 +1077,45 @@ main {
   margin-right: -48px;
   border-left: 0;
   border-right: 0;
+  overflow: visible;
 }
 
-/* Content grid */
-.detail-content {
+/* Hero content grid — poster + info side by side */
+.detail-hero-content {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(160px, 220px) 1fr;
-  gap: 32px;
-  align-items: end;
-  min-height: 520px;
-  padding: 72px 48px 48px;
+  grid-template-columns: minmax(240px, 340px) 1fr;
+  gap: 40px;
+  align-items: start;
+  padding: 48px 48px 40px;
 }
 
-.detail-content,
-.detail-info { overflow: visible; }
+/* Back button within hero content */
+.detail-hero-content .back-hero-btn {
+  position: absolute;
+  top: 16px;
+  left: 4px;
+  z-index: 5;
+}
 
-/* Poster in detail */
+/* Poster — visual pillar, maintains aspect ratio */
 .detail-poster {
   overflow: hidden;
   border-radius: var(--radius);
-  border: 1px solid var(--line);
   background: var(--surface);
   aspect-ratio: 2/3;
-  box-shadow: var(--shadow-xl);
+  box-shadow: 0 8px 36px rgba(0,0,0,.55);
+  transition: transform .3s ease, box-shadow .3s ease;
+  width: 100%;
+}
+
+.detail-hero-content,
+.detail-info { overflow: visible; }
+
+.detail-poster:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 48px rgba(0,0,0,.65);
 }
 
 .detail-poster img {
@@ -1152,44 +1127,78 @@ main {
 
 .detail-info { min-width: 0; }
 
+/* Cast section inline within info area */
+.detail-cast-inline {
+  margin-top: 20px;
+}
+
+.detail-cast-inline .cast-section {
+  padding: 0;
+  margin-top: 0;
+  border: none;
+}
+
+.detail-cast-inline .cast-section .section-header {
+  margin-bottom: 10px;
+}
+
+.detail-cast-inline .cast-scroll {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .detail-info h1 {
   margin: 0;
-  font-size: clamp(32px, 4.5vw, 56px);
-  font-weight: 950;
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 900;
   letter-spacing: -.02em;
-  line-height: 1;
+  line-height: 1.1;
+  text-shadow: 0 2px 12px rgba(0,0,0,.4);
 }
 
 .detail-subtitle {
-  color: var(--text-secondary);
+  color: rgba(255,255,255,.45);
   font-size: 15px;
   margin-top: 6px;
   font-weight: 400;
+  letter-spacing: .01em;
 }
 
+/* ── Meta row: year, rating, season/ep count ── */
 .detail-primary-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
 .detail-primary-meta .year {
-  color: var(--text-secondary);
-  font-size: 14px;
+  color: rgba(255,255,255,.6);
+  font-size: 15px;
+  font-weight: 500;
 }
 
 .detail-primary-meta .sep {
-  color: var(--line-strong);
-  font-size: 12px;
+  color: rgba(255,255,255,.2);
+  font-size: 10px;
 }
 
+/* ── Tags row: genres + douban tags ── */
 .genre-tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   margin-top: 12px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 2px;
+}
+
+.genre-tags::-webkit-scrollbar {
+  display: none;
 }
 
 .genre-tag {
@@ -1197,56 +1206,59 @@ main {
   border-radius: var(--radius-full);
   font-size: 12px;
   font-weight: 500;
-  background: rgba(255,255,255,.06);
-  color: var(--text-secondary);
-  border: 1px solid rgba(255,255,255,.06);
-  transition: background .2s, border-color .2s;
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.7);
+  border: 1px solid rgba(255,255,255,.08);
+  transition: background .15s, border-color .15s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .genre-tag:hover {
   background: rgba(255,255,255,.1);
-  border-color: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.14);
 }
 
-.douban-tags { margin-top: 6px; }
-.douban-tag.runtime { background: rgba(255,255,255,.04); color: var(--text); font-weight: 600; }
+.douban-tags { margin-top: 4px; }
+.douban-tag.runtime { background: rgba(255,255,255,.05); color: rgba(255,255,255,.8); font-weight: 600; }
 
-.douban-meta { margin-top: 8px; }
+.douban-meta { margin-top: 6px; }
 
 .douban-cast {
   margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted);
+  font-size: 13px;
+  color: rgba(255,255,255,.5);
   line-height: 1.6;
 }
 
 .douban-cast .cast-label {
-  color: var(--muted);
+  color: rgba(255,255,255,.5);
   font-weight: 600;
   margin-right: 4px;
 }
 
-.douban-cast .cast-names { color: var(--text-secondary); }
+.douban-cast .cast-names { color: rgba(255,255,255,.5); }
 
-/* Overview / Synopsis */
-.overview-wrap {
-  position: relative;
-  margin-top: 16px;
-}
-
+/* ── Overview / Synopsis ── */
 .overview {
-  color: var(--text-secondary);
+  margin-top: 16px;
+  color: rgba(255,255,255,.7);
   font-size: 15px;
   line-height: 1.75;
-  overflow: hidden;
+  letter-spacing: .01em;
 }
 
-/* Detail Action Bar */
+/* ── Star Rating ── */
+.star-rating {
+  margin-top: 14px;
+}
+
+/* ── Detail Action Bar ── */
 .detail-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 20px;
+  gap: 8px;
+  margin-top: 18px;
 }
 
 .detail-actions .cta-btn {
@@ -2144,18 +2156,56 @@ mark {
   .row-scroll .card { min-width: 140px; width: 140px; }
 
   /* Detail mobile */
-  .detail-content {
+  .detail-hero-content {
     grid-template-columns: 1fr;
-    min-height: auto;
-    padding: 60px 20px 32px;
+    padding: 16px 16px 24px;
+    align-items: start;
   }
 
-  .detail-poster { max-width: 120px; }
-  .detail-hero { min-height: auto; }
+  .detail-hero-content .back-hero-btn {
+    top: 8px;
+    left: -4px;
+  }
+
+  .detail-poster {
+    max-width: 180px;
+    min-height: auto;
+    max-height: none;
+    aspect-ratio: 2/3;
+  }
+
+  .detail-hero {
+    min-height: auto;
+  }
 
   .cinematic-detail {
     margin-left: -16px;
     margin-right: -16px;
+  }
+
+  .cast-section {
+    padding: 0;
+  }
+
+  .cast-scroll {
+    padding: 4px 16px 8px;
+  }
+
+  .detail-cast-inline .cast-scroll {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .person-hero {
+    padding: 16px 16px 0;
+  }
+
+  .person-hero .back-hero-btn {
+    left: -8px;
+  }
+
+  .person-page .section {
+    padding: 0 16px;
   }
 
   /* Episodes mobile */
@@ -2222,4 +2272,231 @@ mark {
     scroll-behavior: auto !important;
     transition-duration: .01ms !important;
   }
+}
+
+/* =================================================================
+   CAST SECTION — dark, modern, Netflix-style horizontal scroll
+   ================================================================= */
+
+.cast-section {
+  margin-top: 8px;
+  padding: 0 48px;
+}
+
+.cast-scroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 48px 8px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+.cast-scroll::-webkit-scrollbar { height: 3px; }
+.cast-scroll::-webkit-scrollbar-track { background: transparent; }
+.cast-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.06); border-radius: 2px; }
+.cast-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.12); }
+
+.cast-card {
+  min-width: 130px;
+  width: 130px;
+  flex-shrink: 0;
+  scroll-snap-align: start;
+  cursor: pointer;
+  background: rgba(255,255,255,.04);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: transform .2s ease, background .2s ease;
+}
+
+.cast-card:hover {
+  transform: translateY(-3px);
+  background: rgba(255,255,255,.08);
+}
+
+.cast-avatar {
+  width: 130px;
+  height: 150px;
+  overflow: hidden;
+  background: rgba(255,255,255,.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cast-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cast-avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.3);
+  font-size: 36px;
+  font-weight: 600;
+}
+
+.cast-info {
+  padding: 8px 10px 10px;
+}
+
+.cast-name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.cast-role {
+  font-size: 11px;
+  color: rgba(255,255,255,.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+/* =================================================================
+   PERSON DETAIL PAGE — back button as independent top nav,
+   actor hero unified below
+   ================================================================= */
+
+.person-page {
+  position: relative;
+  padding: 0 0 40px;
+}
+
+.person-page .section {
+  padding: 0 48px;
+  max-width: 960px;
+}
+
+.person-hero {
+  position: relative;
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+  padding: 16px 48px 0;
+}
+
+.person-hero .back-hero-btn {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  z-index: 5;
+}
+
+.person-poster {
+  width: 180px;
+  min-width: 180px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,.5);
+  flex-shrink: 0;
+}
+
+.person-poster img {
+  width: 100%;
+  display: block;
+  border-radius: 12px;
+}
+
+.person-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.person-info h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  line-height: 1.2;
+}
+
+.person-original-name {
+  font-size: 14px;
+  color: rgba(255,255,255,.45);
+  margin-bottom: 8px;
+}
+
+.person-dept {
+  display: inline-block;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.5);
+  margin-bottom: 12px;
+}
+
+.person-meta {
+  font-size: 13px;
+  color: var(--text);
+  margin: 4px 0;
+}
+
+.person-meta .meta-label {
+  color: rgba(255,255,255,.4);
+  font-size: 11px;
+}
+
+.person-aka {
+  font-size: 12px;
+  color: rgba(255,255,255,.4);
+  margin: 8px 0;
+}
+
+.person-bio {
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(255,255,255,.6);
+  margin-top: 12px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.person-role {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* =================================================================
+   EPISODE META BADGES
+   ================================================================= */
+
+.episode-row-meta {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.ep-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.06);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ep-badge.rating-badge {
+  background: rgba(255,215,0,.12);
+  color: #f5c518;
 }

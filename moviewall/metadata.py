@@ -3,7 +3,11 @@ import re
 import time
 
 from moviewall.config import load_config, read_json, write_json, METADATA_CACHE_FILE, cache_lock
-from moviewall.database import save_tmdb_meta, save_douban_meta, save_douban_season_meta
+from moviewall.database import (
+    save_tmdb_meta, save_tmdb_season_meta, save_tmdb_episode_meta,
+    save_tmdb_credits, clear_tmdb_child_meta,
+    save_douban_meta, save_douban_season_meta,
+)
 from moviewall.log import log
 from moviewall.utils import normalize_key, tmdb_request, tmdb_image
 
@@ -101,6 +105,38 @@ def _log_tmdb_search(query_title, query_year, media_type, results, scored, chose
         log.info("TMDB CHOSEN: id=%s name=%s score=%d",
                  chosen.get("id"), chosen.get("name") or chosen.get("title"),
                  scored[0][0] if scored else 0)
+
+
+def _normalize_tmdb_credits(payload, limit=30):
+    """Normalize TMDB cast data into people/credits rows."""
+    out = []
+    for idx, person in enumerate((payload or {}).get("cast") or []):
+        if not person.get("id"):
+            continue
+        out.append({
+            "id": person.get("id"),
+            "name": person.get("name"),
+            "original_name": person.get("original_name"),
+            "profile_url": tmdb_image(person.get("profile_path"), "w185"),
+            "known_for_department": person.get("known_for_department"),
+            "department": "Acting",
+            "job": "Actor",
+            "character": person.get("character"),
+            "order_index": person.get("order", idx),
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _fetch_tmdb_credits(tmdb_id, media_type, scope="media", season_number=None, episode_number=None):
+    if scope == "episode":
+        endpoint = f"tv/{tmdb_id}/season/{season_number}/episode/{episode_number}/credits"
+    elif scope == "season":
+        endpoint = f"tv/{tmdb_id}/season/{season_number}/credits"
+    else:
+        endpoint = f"movie/{tmdb_id}/credits" if media_type == "movie" else f"tv/{tmdb_id}/credits"
+    return _normalize_tmdb_credits(tmdb_request(endpoint, {}) or {})
 
 
 def _log_season_poster_chain(media_id, show_title, season_data, db_season_data):
@@ -291,7 +327,7 @@ def get_tmdb_metadata(title, year, media_type, force_refresh=False, local_season
 
 
 def fetch_tmdb_seasons(tmdb_id, seasons_list, lang, force_refresh=False):
-    """Fetch per-season TMDB metadata (rating, air_date, overview, poster).
+    """Fetch per-season and per-episode TMDB metadata.
     Falls back to en-US for overview when the preferred language has none.
     When force_refresh=True, always fetches fresh data and updates cache.
     """
@@ -317,6 +353,10 @@ def fetch_tmdb_seasons(tmdb_id, seasons_list, lang, force_refresh=False):
                     cache[ck] = {"_cached_at": time.time(), "data": sdata}
         if sdata:
             entry = {}
+            if sdata.get("id"):
+                entry["tmdb_id"] = sdata["id"]
+            if sdata.get("name"):
+                entry["title"] = sdata["name"]
             if sdata.get("vote_average"):
                 entry["rating"] = sdata["vote_average"]
             if sdata.get("air_date"):
@@ -344,6 +384,21 @@ def fetch_tmdb_seasons(tmdb_id, seasons_list, lang, force_refresh=False):
                 entry["overview"] = overview
             if sdata.get("poster_path"):
                 entry["poster_url"] = tmdb_image(sdata["poster_path"], "w500")
+            episodes = []
+            for ep in sdata.get("episodes") or []:
+                ep_entry = {
+                    "tmdb_id": ep.get("id"),
+                    "episode_number": ep.get("episode_number"),
+                    "title": ep.get("name"),
+                    "overview": ep.get("overview") or "",
+                    "rating": ep.get("vote_average"),
+                    "air_date": ep.get("air_date"),
+                    "still_url": tmdb_image(ep.get("still_path"), "w300"),
+                    "runtime": ep.get("runtime"),
+                }
+                episodes.append({k: v for k, v in ep_entry.items() if v not in (None, "")})
+            if episodes:
+                entry["episodes"] = episodes
             if entry:
                 season_map[str(sn)] = entry
     log.info("TMDB SEASONS: tmdb_id=%s seasons_fetched=%d poster_count=%d",
@@ -438,19 +493,42 @@ def attach_all_metadata(item, force_refresh=False):
     tmdb_store = dict(tmdb_data) if tmdb_data else {}
     tmdb_store.pop("_detected_type", None)
     tmdb_store.pop("_was_fallback", None)
-    if season_data:
-        tmdb_store["_season_data"] = season_data
-    elif "_season_data" in tmdb_store:
-        del tmdb_store["_season_data"]
     save_tmdb_meta(media_id, tmdb_store)
+
+    if not tmdb_store.get("tmdb_id"):
+        clear_tmdb_child_meta(media_id)
+    else:
+        credits_type = "movie" if detected_type == "movie" else "tv"
+        save_tmdb_credits("media", _fetch_tmdb_credits(tmdb_store["tmdb_id"], credits_type), media_id=media_id)
+        for season in local_seasons:
+            sn = season.get("season_number")
+            if not sn:
+                continue
+            sdata = season_data.get(str(sn), {})
+            if sdata:
+                save_tmdb_season_meta(season["id"], media_id, sn, sdata)
+                save_tmdb_credits(
+                    "season",
+                    _fetch_tmdb_credits(tmdb_store["tmdb_id"], "tv", scope="season", season_number=sn),
+                    media_id=media_id,
+                    season_id=season["id"],
+                )
+                tmdb_eps = {
+                    int(ep.get("episode_number")): ep
+                    for ep in sdata.get("episodes", [])
+                    if ep.get("episode_number") is not None
+                }
+                for ep in season.get("episodes", []):
+                    epn = ep.get("episode_number")
+                    if epn in tmdb_eps:
+                        save_tmdb_episode_meta(
+                            ep["id"], media_id, season["id"], sn, epn, tmdb_eps[epn]
+                        )
     log.info("ATTACH SAVED: media_id=%s tmdb_id=%s season_count=%d",
              media_id, tmdb_store.get("tmdb_id"), len(season_data))
 
     if detected_type == "tv" and season_data:
-        from moviewall.database import load_tmdb_meta
-        from_db = load_tmdb_meta(media_id)
-        _log_season_poster_chain(media_id, query_title, season_data,
-                                 (from_db.get("_season_data") or {}))
+        _log_season_poster_chain(media_id, query_title, season_data, season_data)
 
     if tmdb_data:
         meta["tmdb"] = dict(tmdb_data)
@@ -480,7 +558,6 @@ def attach_all_metadata(item, force_refresh=False):
         from moviewall.douban import fetch_douban_by_season
         show_title = tmdb_data.get("title", "") if tmdb_data else query_title
         orig_title_show = tmdb_data.get("original_title", "") if tmdb_data else ""
-        season_meta_db = {}
         for season in local_seasons:
             sn = season.get("season_number")
             if not sn:
@@ -488,8 +565,5 @@ def attach_all_metadata(item, force_refresh=False):
             sdata = fetch_douban_by_season(show_title, query_year, sn, orig_title_show, force_refresh)
             if sdata:
                 save_douban_season_meta(season["id"], media_id, sn, sdata)
-                season_meta_db[str(sn)] = sdata
-        if season_meta_db:
-            item["_season_meta"] = season_meta_db
 
     return item

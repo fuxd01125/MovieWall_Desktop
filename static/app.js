@@ -105,6 +105,92 @@ async function _pollHistory() {
   } catch (e) { /* ignore poll errors */ }
 }
 
+/* ===== Cast Section ===== */
+
+function renderCastSection(cast) {
+  if (!cast || !cast.length) return '';
+  return '<section class="section cast-section">'
+    + '<div class="section-header"><h2>演员</h2><small>' + cast.length + ' 人</small></div>'
+    + '<div class="cast-scroll">'
+    + cast.map(c => {
+      const p = c.person || {};
+      const img = p.profile_url
+        ? '<img src="' + p.profile_url + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'cast-avatar-placeholder\\\'>' + escapeHtml((p.name || '?')[0]) + '</div>\'">'
+        : '<div class="cast-avatar-placeholder">' + escapeHtml((p.name || '?')[0]) + '</div>';
+      return '<article class="cast-card" onclick="openPerson(\'' + escapeJs(p.id || '') + '\')">'
+        + '<div class="cast-avatar">' + img + '</div>'
+        + '<div class="cast-info">'
+        + '<div class="cast-name">' + escapeHtml(p.name || '') + '</div>'
+        + '<div class="cast-role">' + escapeHtml(c.character || c.job || '') + '</div>'
+        + '</div></article>';
+    }).join('')
+    + '</div></section>';
+}
+
+async function openPerson(personId) {
+  if (!personId) return;
+  showSkeleton();
+  const res = await fetch("/api/person/" + encodeURIComponent(personId));
+  if (!res.ok) { showToast("演员信息未能加载", 3000); goHome(); return; }
+  const data = await res.json();
+  navigateTo({type:"person", data});
+}
+
+function renderPersonDetail(data) {
+  currentView = {type:"person", data};
+  renderCategoryTabs();
+  renderBreadcrumb();
+
+  const img = data.profile_url
+    ? '<img src="' + data.profile_url + '" loading="lazy">'
+    : '<div class="placeholder">' + escapeHtml((data.name || '?')[0]) + '</div>';
+  const aka = data.also_known_as && data.also_known_as.length
+    ? '<div class="person-aka">又名: ' + data.also_known_as.map(n => escapeHtml(n)).join(' / ') + '</div>' : '';
+
+  // Hero section — back button + avatar + info
+  let hero = '<div class="person-hero">'
+    + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回" aria-label="返回">'
+    + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
+    + '</button>'
+    + '<div class="person-poster">' + img + '</div>'
+    + '<div class="person-info">'
+    + '<h1>' + escapeHtml(data.name || '') + '</h1>'
+    + (data.original_name && data.original_name !== data.name ? '<div class="person-original-name">' + escapeHtml(data.original_name) + '</div>' : '')
+    + (data.known_for_department ? '<div class="person-dept">' + escapeHtml(data.known_for_department) + '</div>' : '')
+    + (data.birthday ? '<div class="person-meta"><span class="meta-label">出生</span> ' + escapeHtml(data.birthday) + (data.deathday ? ' — ' + escapeHtml(data.deathday) : '') + '</div>' : '')
+    + (data.place_of_birth ? '<div class="person-meta"><span class="meta-label">出生地</span> ' + escapeHtml(data.place_of_birth) + '</div>' : '')
+    + aka
+    + (data.biography ? '<div class="person-bio">' + escapeHtml(data.biography) + '</div>' : '')
+    + '</div></div>';
+
+  // Works section
+  const works = data.works || [];
+  let worksHtml = '';
+  if (works.length) {
+    worksHtml = '<section class="section"><div class="section-header"><h2>本地作品</h2><small>' + works.length + ' 部</small></div>'
+      + '<div class="grid">'
+      + works.map(w => {
+        const item = findItem(w.media_id);
+        const poster = item ? artworkUrl(item, "poster") : '';
+        const title = w.display_title || w.media_title || '';
+        const role = w.character ? '饰 ' + w.character : (w.job || w.department || '');
+        return '<article class="card" onclick="openDetail(\'' + escapeJs(w.media_id) + '\')">'
+          + '<div class="card-poster">'
+          + (poster
+            ? '<img src="' + poster + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder\\\'>' + escapeHtml(title) + '</div>\'">'
+            : '<div class="placeholder">' + escapeHtml(title) + '</div>')
+          + '</div>'
+          + '<div class="card-body">'
+          + '<h4 class="card-title">' + escapeHtml(title) + '</h4>'
+          + (role ? '<div class="person-role">' + escapeHtml(role) + '</div>' : '')
+          + '</div></article>';
+      }).join('')
+      + '</div></section>';
+  }
+
+  app.innerHTML = '<div class="person-page">' + hero + worksHtml + '</div>';
+}
+
 function startHistoryPolling() {
   if (historyPollInterval) return;
   historyPollInterval = setInterval(_pollHistory, 3000);
@@ -144,6 +230,9 @@ function escapeJs(s) {
 function titleOf(item) { return item?.display_title || item?.title || item?.filename || "未命名"; }
 function tmdb(item) { return item?.metadata?.tmdb || {}; }
 function douban(item) { return item?.metadata?.douban || {}; }
+function seasonTmdb(season) { return season?.metadata?.tmdb || season?.tmdb || {}; }
+function seasonDouban(season) { return season?.metadata?.douban || season?.douban || {}; }
+function creditsCast(item) { return item?.metadata?.credits?.cast || []; }
 
 function artworkUrl(item, kind="poster") {
   if (!item) return "";
@@ -187,7 +276,8 @@ function renderCategoryTabs() {
   // Only "全部" + dynamic categories from library data — no media_type tabs
   const tabs = [
     {key:"all", label:"全部"},
-    ...catStats.map(c => ({key:"cat:" + c.key, label: c.name}))
+    ...catStats.map(c => ({key:"cat:" + c.key, label: c.name})),
+    {key:"favorites", label:"收藏"}
   ];
   catTabs.innerHTML = tabs.map(t =>
     '<button class="cat-tab' + (activeTab === t.key ? ' active' : '') + '" onclick="setTab(\'' + t.key + '\')">' + t.label + '</button>'
@@ -316,6 +406,9 @@ function renderRoute(view) {
     if (!show || !season) return renderHome();
     return renderSeasonDetail(show, season);
   }
+  if (view.type === "person") {
+    return renderPersonDetail(view.data);
+  }
 }
 
 function navigateTo(view) {
@@ -433,7 +526,8 @@ function renderHome() {
 
   const items = getFilteredItems();
   if (!items.length) {
-    app.innerHTML = '<section class="section"><div class="empty">没有匹配的内容。试试其他分类或搜索词。</div></section>';
+    const emptyMsg = activeTab === "favorites" ? "暂无收藏内容" : "没有匹配的内容。试试其他分类或搜索词。";
+    app.innerHTML = '<section class="section"><div class="empty">' + emptyMsg + '</div></section>';
     return;
   }
 
@@ -451,6 +545,11 @@ function renderHome() {
 
     if (continueItems.length > 0) {
       html += renderRowSection("继续观看", continueItems, renderContinueCard);
+    }
+    // Favorites row
+    const favItems = items.filter(i => favoritesCache.includes(i.id));
+    if (favItems.length > 0) {
+      html += renderRowSection("收藏", favItems, renderHomeCard, "favorites");
     }
     // Dynamic category sections — ONLY from library.stats.categories, no media_type sections
     for (const cat of catStats) {
@@ -483,8 +582,9 @@ function renderHome() {
       + '<div class="section-header"><h2>搜索结果</h2><small>' + items.length + ' 项</small></div>'
       + '<div class="grid">' + items.map(renderHomeCard).join('') + '</div></section>';
   } else {
+    const sectionTitle = activeTab === "favorites" ? "收藏" : escapeHtml(items[0]?.category_name || '');
     html += '<section class="section">'
-      + '<div class="section-header"><h2>' + escapeHtml(items[0]?.category_name || '') + '</h2><small>' + items.length + ' 项</small></div>'
+      + '<div class="section-header"><h2>' + sectionTitle + '</h2><small>' + items.length + ' 项</small></div>'
       + '<div class="grid">' + items.map(renderHomeCard).join('') + '</div></section>';
   }
 
@@ -494,6 +594,10 @@ function renderHome() {
 function getFilteredItems() {
   const q = search.value.trim().toLowerCase();
   return library.items.filter(item => {
+    // Favorites tab — only show favorited items
+    if (activeTab === "favorites") {
+      return favoritesCache.includes(item.id);
+    }
     // Only category-based tab filtering — no media_type filtering
     if (activeTab.startsWith("cat:")) {
       const catKey = activeTab.slice(4);
@@ -549,24 +653,10 @@ function primaryPlayAction(item) {
 }
 
 function renderCardOverlay(item) {
-  const t = tmdb(item);
-  const d = douban(item);
-  const genres = (t.genres || []).slice(0, 2);
-  const hist = getItemHistory(item);
-  const typeLabel = item.type === "show" ? ((item.season_count || 0) + " 季") : "电影";
-  let metaHtml = '';
-  if (item.year) metaHtml += '<span class="rating-badge sm">' + escapeHtml(item.year) + '</span>';
-  if (d.rating) metaHtml += '<span class="rating-badge sm douban">豆 ' + Number(d.rating).toFixed(1) + '</span>';
-  else if (t.rating) metaHtml += renderRatingBadge(t.rating, {sm:true});
-  if (genres.length) metaHtml += genres.map(g => '<span class="rating-badge sm" style="background:rgba(255,255,255,.08);color:var(--muted);font-weight:500">' + escapeHtml(g) + '</span>').join('');
   return '<div class="card-overlay">'
     + '<div class="poster-actions">'
     + '<button class="poster-play" onclick="event.stopPropagation();' + primaryPlayAction(item) + '" title="播放">▶</button>'
-    + '<button class="poster-info" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')" title="详情">i</button>'
     + '</div>'
-    + '<div class="card-meta">' + metaHtml + '</div>'
-    + '<div class="card-overlay-title">' + escapeHtml(titleOf(item)) + '</div>'
-    + '<div class="card-overlay-subtitle">' + (hist ? '继续观看' : escapeHtml(typeLabel)) + '</div>'
     + '</div>';
 }
 
@@ -599,6 +689,8 @@ function renderContinueCard(entry) {
   const title = hist.show_title || hist.title || titleOf(item);
   const label = hist.short_label || hist.label || "";
   const isShow = item.type === "show";
+  // Episode context: if hist has episode_number/season_number, show it
+  const epContext = hist.season_number ? 'S' + String(hist.season_number).padStart(2,'0') + 'E' + String(hist.episode_number || 0).padStart(2,'0') : label;
   let progressPct = 0;
   if (isShow) {
     const totalEps = item.episode_count || 0;
@@ -606,7 +698,7 @@ function renderContinueCard(entry) {
       sum + (s.episodes || []).filter(ep => historyCache[ep.id]).length, 0);
     progressPct = totalEps ? Math.round(watchedEps / totalEps * 100) : 0;
   }
-  const histEntry = "{media_id:'" + item.id + "',type:'" + item.type + "',path:'" + escapeJs(hist.path) + "',title:'" + escapeJs(title) + "',show_title:'" + escapeJs(hist.show_title || title) + "',label:'" + escapeJs(hist.label || "") + "',short_label:'" + escapeJs(hist.short_label || "") + "'}";
+  const histEntry = "{media_id:'" + item.id + "',type:'" + item.type + "',path:'" + escapeJs(hist.path) + "',title:'" + escapeJs(title) + "',show_title:'" + escapeJs(hist.show_title || title) + "',label:'" + escapeJs(epContext) + "',short_label:'" + escapeJs(epContext) + "'}";
   const t = tmdb(item);
   const d = douban(item);
   const score = d.rating || t.rating || "";
@@ -617,14 +709,13 @@ function renderContinueCard(entry) {
       ? '<img src="' + artworkUrl(item, "poster") + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder\\\'>' + escapeHtml(title) + '</div>\'">'
       : '<div class="placeholder">' + escapeHtml(title) + '</div>')
     + '<div class="card-overlay">'
-    + '<div class="poster-actions"><button class="poster-play" onclick="event.stopPropagation();playMedia(\'' + escapeJs(hist.path) + '\',' + histEntry + ')" title="继续播放">▶</button><button class="poster-info" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')" title="详情">i</button></div>'
-    + '<div class="card-meta"><span class="rating-badge sm">' + escapeHtml(label) + '</span></div>'
-    + '<div class="card-overlay-title">' + escapeHtml(title) + '</div>'
-    + '<div class="card-overlay-subtitle">继续观看</div>'
+    + '<div class="poster-actions"><button class="poster-play" onclick="event.stopPropagation();playMedia(\'' + escapeJs(hist.path) + '\',' + histEntry + ')" title="继续播放">▶</button></div>'
     + '</div>'
     + (progressPct > 0 ? '<div class="card-progress"><div class="card-progress-bar" style="width:' + progressPct + '%"></div></div>' : '')
     + '</div>'
-    + '<div class="card-body"><div class="continue-kicker">▶ 继续观看</div><h4 class="card-title">' + escapeHtml(title) + '</h4></div>'
+    + '<div class="card-body">'
+    + '<div class="continue-kicker">▶ ' + escapeHtml(isShow ? epContext : '继续观看') + '</div>'
+    + '<h4 class="card-title">' + escapeHtml(title) + '</h4></div>'
     + '</article>';
 }
 
@@ -729,12 +820,17 @@ function renderDoubanTags(item) {
   const d = douban(item);
   const abstract = d.abstract || "";
   const abstract_2 = d.abstract_2 || "";
-  if (!abstract && !abstract_2) return '';
+  const cast = creditsCast(item);
+  if (!abstract && !abstract_2 && !cast.length) return '';
+  // Skip douban abstract parts that already appear as TMDB genres
+  const t = tmdb(item);
+  const existingGenres = (t.genres || []).map(g => g.toLowerCase());
   let tags = [];
   if (abstract) {
     abstract.split(' / ').forEach(part => {
       part = part.trim();
       if (!part) return;
+      if (existingGenres.includes(part.toLowerCase())) return;
       if (/^\d+分钟$/.test(part)) {
         tags.push('<span class="genre-tag douban-tag runtime">' + escapeHtml(part) + '</span>');
       } else {
@@ -746,12 +842,14 @@ function renderDoubanTags(item) {
   if (tags.length) html += '<div class="genre-tags douban-tags">' + tags.join('') + '</div>';
   if (abstract_2) {
     html += '<div class="douban-cast"><span class="cast-label">演员</span> <span class="cast-names">' + escapeHtml(abstract_2.replace(/ \/ /g, ' · ')) + '</span></div>';
+  } else if (cast.length) {
+    html += '<div class="douban-cast"><span class="cast-label">演员</span> <span class="cast-names">' + escapeHtml(cast.slice(0, 8).map(c => c.person?.name).filter(Boolean).join(' · ')) + '</span></div>';
   }
   html += '</div>';
   return html;
 }
 
-function detailHero(item, bodyHtml) {
+function detailHero(item, bodyHtml, castHtml) {
   const bg = backdropUrl(item);
   const poster = tmdb(item).poster_url || artworkUrl(item, "poster") || artworkUrl(item, "thumb");
 
@@ -766,15 +864,18 @@ function detailHero(item, bodyHtml) {
 
   return pageBg
     + '<section class="detail-hero cinematic-detail">'
+    + '<div class="detail-hero-content">'
     + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回" aria-label="返回">'
     + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
     + '</button>'
-    + '<div class="detail-content">'
     + '<div class="detail-poster">'
     + (poster ? '<img src="' + poster + '" loading="lazy">' : '<div class="placeholder">' + escapeHtml(titleOf(item)) + '</div>')
     + '</div>'
-    + '<div class="detail-info">' + bodyHtml + '</div>'
-    + '</div></section>';
+    + '<div class="detail-info">' + bodyHtml
+    + (castHtml ? '<div class="detail-cast-inline">' + castHtml + '</div>' : '')
+    + '</div>'
+    + '</div>'
+    + '</section>';
 }
 
 function renderMovieDetail(item) {
@@ -787,6 +888,7 @@ function renderMovieDetail(item) {
   const hist = getItemHistory(item);
   const entry = "{media_id:'" + item.id + "',type:'movie',path:'" + escapeJs(item.path) + "',title:'" + escapeJs(titleOf(item)) + "',show_title:'" + escapeJs(titleOf(item)) + "',label:'电影',short_label:'电影'}";
   const d = douban(item);
+  const cast = (item.metadata?.credits?.cast || []).filter(c => c.person?.id);
   const more = moreMenuHtml(item, '<button onclick="openFolder(\'' + escapeJs(item.folder) + '\')">打开文件夹</button><button onclick="updateSingleItem(\'' + item.id + '\')">更新此项目</button><button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(d.douban_id || "") + '\')">' + (d.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>');
 
   const body = '<h1>' + escapeHtml(titleOf(item)) + '</h1>'
@@ -794,14 +896,15 @@ function renderMovieDetail(item) {
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
     + renderDoubanTags(item)
-    + (overview ? '<div class="overview-wrap"><div class="overview full">' + escapeHtml(overview) + '</div></div>' : '')
+    + (overview ? '<div class="overview">' + escapeHtml(overview) + '</div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
     + more
     + '</div>';
 
-  app.innerHTML = detailHero(item, body);
+  const castHtml = renderCastSection(cast);
+  app.innerHTML = detailHero(item, body, castHtml);
 }
 
 function renderShowDetail(item) {
@@ -819,13 +922,14 @@ function renderShowDetail(item) {
   const more = moreMenuHtml(item, moreActions);
   const firstEp = findFirstEpisode(item);
   const firstEntry = firstEp ? episodeEntry(item, firstEp.season, firstEp.ep, firstEp.season.title + " · " + firstEp.ep.title) : "";
+  const cast = (item.metadata?.credits?.cast || []).filter(c => c.person?.id);
 
   const body = '<h1>' + escapeHtml(titleOf(item)) + '</h1>'
     + (origTitle ? '<div class="detail-subtitle">' + escapeHtml(origTitle) + '</div>' : '')
     + '<div class="detail-primary-meta">' + renderPrimaryMeta(item) + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(item) + '</div>'
     + renderDoubanTags(item)
-    + (overview ? '<div class="overview-wrap"><div class="overview full">' + escapeHtml(overview) + '</div></div>' : '')
+    + (overview ? '<div class="overview">' + escapeHtml(overview) + '</div>' : '')
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '')
@@ -834,6 +938,7 @@ function renderShowDetail(item) {
     + more
     + '</div>';
 
+  const castHtml = renderCastSection(cast);
   const isExpanded = (snum) => expandedSeason === item.id + "|" + snum;
   const seasonCards = (item.seasons || []).map((s, i) => renderSeasonCard(item, s, isExpanded(s.season_number)));
 
@@ -856,7 +961,7 @@ function renderShowDetail(item) {
   }
 
   seasonHtml += '</section>';
-  app.innerHTML = detailHero(item, body) + seasonHtml;
+  app.innerHTML = detailHero(item, body, castHtml) + seasonHtml;
 }
 
 function findFirstEpisode(show) {
@@ -872,10 +977,8 @@ function findFirstEpisode(show) {
 function renderSeasonCard(show, season, expanded) {
   const epWatched = season.episodes.filter(ep => historyCache[ep.id]).length;
   const progressPct = season.episode_count ? Math.round(epWatched / season.episode_count * 100) : 0;
-  const t = tmdb(show);
-  const sm = show._season_meta || {};
-  const sMeta = sm[String(season.season_number)] || {};
-  const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
+  const sMeta = seasonDouban(season);
+  const tmdbSeasonData = seasonTmdb(season);
   const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
   const seasonPoster = tmdbSeasonData.poster_url || sMeta.poster_url || artworkUrl(season, "poster") || "";
   const moreId = "smore-" + show.id + "-" + season.season_number;
@@ -908,10 +1011,8 @@ function renderSeasonCard(show, season, expanded) {
 }
 
 function renderInlineEpisodes(show, season) {
-  const t = tmdb(show);
-  const sm = show._season_meta || {};
-  const sMeta = sm[String(season.season_number)] || {};
-  const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
+  const sMeta = seasonDouban(season);
+  const tmdbSeasonData = seasonTmdb(season);
   const seasonSynopsis = sMeta.synopsis || tmdbSeasonData.overview || "";
   const seasonPoster = tmdbSeasonData.poster_url || sMeta.poster_url || artworkUrl(season, "poster") || "";
   let detailHtml = '';
@@ -941,9 +1042,8 @@ function renderSeasonDetail(show, season) {
   const firstEp = (season.episodes || [])[0];
   const firstEntry = firstEp ? episodeEntry(show, season, firstEp, season.title + " · " + firstEp.title) : "";
   const t = tmdb(show);
-  const sm = show._season_meta || {};
-  const sMeta = sm[String(season.season_number)] || {};
-  const tmdbSeasonData = (t._season_data || {})[String(season.season_number)] || {};
+  const sMeta = seasonDouban(season);
+  const tmdbSeasonData = seasonTmdb(season);
   const seasonRating = sMeta.rating || tmdbSeasonData.rating || "";
   const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
   const seasonSynopsis = sMeta.synopsis || tmdbSeasonData.overview || "";
@@ -984,7 +1084,7 @@ function renderSeasonDetail(show, season) {
     + '<div class="detail-primary-meta">' + metaParts.join('<span class="sep">·</span>') + '</div>'
     + '<div class="genre-tags">' + renderGenreTags(show) + '</div>'
     + renderSeasonDoubanTags(show, season)
-    + (seasonSynopsis ? '<div class="overview-wrap"><div class="overview full">' + escapeHtml(seasonSynopsis) + '</div></div>' : '')
+    + (seasonSynopsis ? '<div class="overview">' + escapeHtml(seasonSynopsis) + '</div>' : '')
     + starRatingWidget(show)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + show.id + '\')">▶ 继续播放</button>' : '')
@@ -994,7 +1094,7 @@ function renderSeasonDetail(show, season) {
     + more
     + '</div>';
 
-  app.innerHTML = detailHero(seasonHero, body)
+  app.innerHTML = detailHero(seasonHero, body, '')
     + '<section class="section">'
     + '<div class="section-header"><h2>剧集</h2><small>' + (season.episode_count || 0) + ' 集</small></div>'
     + '<div class="episode-list">'
@@ -1003,8 +1103,7 @@ function renderSeasonDetail(show, season) {
 }
 
 function renderSeasonDoubanTags(show, season) {
-  const sm = (show._season_meta || {});
-  const sMeta = sm[String(season.season_number)] || {};
+  const sMeta = seasonDouban(season);
   const d = douban(show);
   const abstract = d.abstract || "";
   let tags = [];
@@ -1040,13 +1139,18 @@ function renderEpisodeCard(show, season, ep) {
   const label = season.title + " · " + ep.title;
   const entry = episodeEntry(show, season, ep, label);
   const epHist = historyCache[ep.id];
-  const thumbSrc = artworkUrl(ep, "thumb") || artworkUrl(ep, "poster");
+  const epm = ep.metadata?.tmdb || {};
+  const stillSrc = epm.still_url || artworkUrl(ep, "thumb") || artworkUrl(ep, "poster");
   const epNum = "S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0");
+  const epName = epm.title || ep.title || ep.filename || epNum;
+  const epOverview = epm.overview || ep.overview || "";
+  const epRating = epm.rating ? '<span class="ep-badge rating-badge sm">★ ' + Number(epm.rating).toFixed(1) + '</span>' : '';
+  const epRuntime = epm.runtime ? '<span class="ep-badge">' + epm.runtime + '分钟</span>' : '';
 
   return '<div class="episode-row' + (active ? ' active-episode' : '') + '" onclick="playMedia(\'' + escapeJs(ep.path) + '\',' + entry + ')">'
     + '<div class="episode-row-thumb">'
-    + (thumbSrc
-      ? '<img src="' + thumbSrc + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder episode-placeholder\\\'>' + escapeHtml(epNum) + '</div>\'">'
+    + (stillSrc
+      ? '<img src="' + stillSrc + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder episode-placeholder\\\'>' + escapeHtml(epNum) + '</div>\'">'
       : '<div class="placeholder episode-placeholder">' + escapeHtml(epNum) + '</div>')
     + '<div class="play-badge"><span>▶</span></div>'
     + '</div>'
@@ -1054,9 +1158,10 @@ function renderEpisodeCard(show, season, ep) {
     + '<div class="episode-row-body">'
     + '<div class="episode-row-top">'
     + '<span class="episode-row-num' + (active ? ' active-num' : '') + '">' + epNum + '</span>'
-    + '<span class="episode-row-title">' + escapeHtml(ep.title || ep.filename) + '</span>'
+    + '<span class="episode-row-title">' + escapeHtml(epName) + '</span>'
+    + '<span class="episode-row-meta">' + epRating + epRuntime + '</span>'
     + '</div>'
-    + '<div class="episode-row-overview">' + escapeHtml(ep.overview || ep.filename || "") + '</div>'
+    + (epOverview ? '<div class="episode-row-overview">' + escapeHtml(epOverview) + '</div>' : '')
     + (epHist ? '<div class="episode-row-progress"><div class="bar" style="width:100%"></div></div>' : '')
     + '</div>'
 
@@ -1331,4 +1436,15 @@ document.addEventListener("click", (e) => {
 
 search.addEventListener("input", () => { moreMenuOpen = null; seasonMoreOpen = null; navStack = []; renderHome(); });
 window.addEventListener("keydown", e => { if (e.key === "Escape" && currentView.type !== "home") goBackSmart(); });
+
+// Mousewheel horizontal scroll for cast-scroll containers
+document.addEventListener("wheel", (e) => {
+  const scroll = e.target.closest(".cast-scroll");
+  if (!scroll) return;
+  if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+    e.preventDefault();
+    scroll.scrollLeft += e.deltaY;
+  }
+}, { passive: false });
+
 loadLibrary();
