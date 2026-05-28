@@ -31,9 +31,10 @@ window.MW = window.MW || {};
     var isShow = item.type === "show";
     var firstEp = isShow ? MW.detail.findFirstEpisode(item) : null;
     var hist = state.getItemHistory(item);
-    var playAction = isShow && firstEp
-      ? "playMedia('" + util.escapeJs(firstEp.ep.path) + "'," + MW.detail.episodeEntry(item, firstEp.season, firstEp.ep, firstEp.season.title + " · " + firstEp.ep.title) + ")"
-      : hist ? "playItemHistory('" + item.id + "')" : "openDetail('" + item.id + "')";
+    var playAction = hist
+      ? "playItemHistory('" + item.id + "')"
+      : isShow && firstEp ? "playMedia('" + util.escapeJs(firstEp.ep.path) + "'," + MW.detail.episodeEntry(item, firstEp.season, firstEp.ep, firstEp.season.title + " · " + firstEp.ep.title) + ")"
+      : "openDetail('" + item.id + "')";
     var playLabel = isShow && hist ? "▶ 继续播放" : (hist ? "▶ 继续播放" : "▶ 立即观看");
     var typeLabel = isShow ? ((item.season_count || 0) + ' 季 · ' + (item.episode_count || 0) + ' 集') : '电影';
 
@@ -145,14 +146,14 @@ window.MW = window.MW || {};
     var t = util.tmdb(item);
     var d = util.douban(item);
     var score = d.rating || t.rating || "";
-    return '<article class="card continue-card" onclick="playMedia(\'' + util.escapeJs(hist.path) + '\',' + histEntry + ')">'
+    return '<article class="card continue-card" onclick="openDetail(\'' + item.id + '\')">'
       + '<div class="card-poster">'
       + (score ? '<div class="card-badge-score">★ ' + Number(score).toFixed(1) + '</div>' : '')
       + (util.artworkUrl(item, "poster")
         ? '<img src="' + util.artworkUrl(item, "poster") + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder\\\'>' + util.escapeHtml(title) + '</div>\'">'
         : '<div class="placeholder">' + util.escapeHtml(title) + '</div>')
       + '<div class="card-overlay">'
-      + '<div class="poster-actions"><button class="poster-play" onclick="event.stopPropagation();playMedia(\'' + util.escapeJs(hist.path) + '\',' + histEntry + ')" title="继续播放">▶</button></div>'
+      + '<div class="poster-actions"><button class="poster-play" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')" title="继续播放">▶</button></div>'
       + '</div>'
       + (progressPct > 0 ? '<div class="card-progress"><div class="card-progress-bar" style="width:' + progressPct + '%"></div></div>' : '')
       + '</div>'
