@@ -1869,17 +1869,211 @@ main {
    SETTINGS
    ================================================================= */
 
-.settings-section {
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
+/* ── Settings Panel (tabbed layout) ─────────────────────────────── */
+
+.settings-panel {
+  display: flex;
+  gap: 0;
+  min-height: calc(100vh - 140px);
 }
 
-.settings-section:first-of-type {
-  border-top: 0;
-  padding-top: 0;
-  margin-top: 0;
+.settings-nav {
+  flex: 0 0 200px;
+  padding: 20px 0;
+  border-right: 1px solid var(--line);
 }
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: all .2s var(--ease-smooth);
+}
+
+.settings-nav-item:hover {
+  color: var(--text);
+  background: rgba(255,255,255,.03);
+}
+
+.settings-nav-item.active {
+  color: var(--text);
+  border-left-color: var(--brand);
+  background: rgba(229,9,20,.06);
+}
+
+.settings-nav-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.settings-body {
+  flex: 1;
+  padding: 24px 32px;
+  max-width: 680px;
+}
+
+.settings-body-header {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.settings-body-desc {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 24px;
+}
+
+/* ── Setting Field ─────────────────────────────────────────────── */
+
+.setting-field {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.setting-field:last-child {
+  border-bottom: 0;
+}
+
+.setting-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.setting-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.setting-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.setting-control {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+.setting-control input[type="text"],
+.setting-control input[type="number"],
+.setting-control select {
+  width: 240px;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+.setting-control select {
+  min-width: 120px;
+}
+
+/* ── Toggle Switch ─────────────────────────────────────────────── */
+
+.toggle-switch {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,.12);
+  border-radius: 12px;
+  transition: background .2s var(--ease-smooth);
+}
+
+.toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background: var(--text);
+  border-radius: 50%;
+  transition: transform .2s var(--ease-spring);
+}
+
+.toggle-switch input:checked + .toggle-track {
+  background: var(--good);
+}
+
+.toggle-switch input:checked + .toggle-track::after {
+  transform: translateX(18px);
+}
+
+/* ── Players List Editor ───────────────────────────────────────── */
+
+.player-list-editor {
+  width: 100%;
+}
+
+.player-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.player-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+.player-row .player-path {
+  flex: 2;
+}
+
+/* ── Save Bar ──────────────────────────────────────────────────── */
+
+.settings-save-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 32px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  z-index: 10;
+}
+
+.settings-save-bar .save-hint {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.settings-save-bar .save-hint.warn {
+  color: var(--accent);
+}
+
+/* ── Categories Editor (compact) ───────────────────────────────── */
 
 .settings-cat-row {
   display: flex;
@@ -1916,6 +2110,50 @@ main {
   display: flex;
   gap: 10px;
   margin-top: 16px;
+}
+
+/* ── Responsive ────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .settings-panel {
+    flex-direction: column;
+    min-height: auto;
+  }
+  .settings-nav {
+    flex: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 12px 0;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+  }
+  .settings-nav-item {
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    padding: 8px 16px;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  .settings-nav-item.active {
+    border-left-color: transparent;
+    border-bottom-color: var(--brand);
+  }
+  .settings-body {
+    padding: 16px;
+  }
+  .setting-field {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .setting-control input[type="text"],
+  .setting-control input[type="number"],
+  .setting-control select {
+    width: 100%;
+  }
+  .settings-save-bar {
+    padding: 12px 16px;
+  }
 }
 
 /* =================================================================

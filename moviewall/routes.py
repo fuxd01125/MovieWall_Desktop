@@ -76,6 +76,31 @@ def is_allowed_folder(folder):
     return False
 
 
+# ── Settings Schema ────────────────────────────────────────────────
+
+SETTINGS_SCHEMA = {
+    "library_root":         {"default": "",      "type": "string",  "label": "媒体库路径",       "section": "library",  "desc": "媒体文件的根目录路径"},
+    "categories":           {"default": {},      "type": "dict",    "label": "目录分类",         "section": "library",  "desc": "文件夹名到显示名的映射"},
+    "generate_thumbnails":  {"default": True,    "type": "bool",    "label": "生成缩略图",       "section": "library",  "desc": "扫描时自动生成视频缩略图"},
+    "thumbnail_second":     {"default": 60,      "type": "int",     "label": "缩略图截取秒数",   "section": "library",  "desc": "从视频的第几秒截取缩略图"},
+    "metadata_enabled":     {"default": True,    "type": "bool",    "label": "启用元数据",       "section": "tmdb",     "desc": "自动从 TMDB 获取影视信息"},
+    "tmdb_api_key":         {"default": "",      "type": "string",  "label": "TMDB API Key",    "section": "tmdb",     "desc": "TMDB API 密钥，可在 themoviedb.org 申请"},
+    "tmdb_language":        {"default": "zh-CN", "type": "string",  "label": "TMDB 语言",        "section": "tmdb",     "desc": "TMDB 返回数据的语言，如 zh-CN、en-US"},
+    "metadata_cache_days":  {"default": 30,      "type": "int",     "label": "元数据缓存天数",   "section": "tmdb",     "desc": "缓存多少天后重新请求 TMDB 数据"},
+    "douban_enabled":       {"default": True,    "type": "bool",    "label": "启用豆瓣",         "section": "douban",   "desc": "自动获取豆瓣评分和简介"},
+    "douban_request_delay": {"default": 0.5,     "type": "float",  "label": "豆瓣请求延迟(秒)", "section": "douban",   "desc": "每次豆瓣请求的间隔，避免被封"},
+    "players":              {"default": [],      "type": "list",    "label": "播放器列表",       "section": "player",   "desc": "可用的媒体播放器"},
+    "ffmpeg_path":          {"default": "ffmpeg","type": "string",  "label": "FFmpeg 路径",      "section": "advanced", "desc": "FFmpeg 可执行文件路径，用于生成缩略图"},
+    "history_limit":        {"default": 500,     "type": "int",     "label": "历史记录上限",     "section": "advanced", "desc": "最多保留多少条播放历史记录"},
+    "log_level":            {"default": "INFO",  "type": "select",  "label": "日志级别",         "section": "advanced", "desc": "日志输出级别，DEBUG 最详细", "options": ["DEBUG", "INFO", "WARNING", "ERROR"]},
+    "enable_file_log":      {"default": True,    "type": "bool",    "label": "启用文件日志",     "section": "advanced", "desc": "将日志写入 moviewall.log 文件"},
+    "auto_open_browser":    {"default": True,    "type": "bool",    "label": "自动打开浏览器",   "section": "advanced", "desc": "启动时自动在浏览器中打开"},
+}
+
+_RESCAN_KEYS = {"library_root", "categories", "generate_thumbnails", "thumbnail_second"}
+_RESTART_KEYS = {"log_level", "enable_file_log", "auto_open_browser"}
+
+
 # ── Route Registration ──────────────────────────────────────────────
 
 def register_routes(app):
@@ -302,6 +327,49 @@ def register_routes(app):
                 cfg[key] = data[key]
         write_json(CONFIG_FILE, cfg)
         return jsonify({"ok": True})
+
+    @app.route("/api/settings", methods=["GET"])
+    def api_get_settings():
+        cfg = load_config()
+        settings = {}
+        for key, schema in SETTINGS_SCHEMA.items():
+            settings[key] = cfg.get(key, schema["default"])
+        return jsonify({"settings": settings, "schema": SETTINGS_SCHEMA})
+
+    @app.route("/api/settings", methods=["POST"])
+    def api_save_settings():
+        data = request.get_json(force=True)
+        cfg = load_config()
+        restart_required = False
+        rescan_required = False
+        for key, value in data.items():
+            if key not in SETTINGS_SCHEMA:
+                continue
+            schema = SETTINGS_SCHEMA[key]
+            expected = schema["type"]
+            if expected == "bool" and not isinstance(value, bool):
+                return jsonify({"ok": False, "error": key + " 必须是布尔值"}), 400
+            if expected in ("int", "float") and not isinstance(value, (int, float)):
+                return jsonify({"ok": False, "error": key + " 必须是数字"}), 400
+            if expected in ("string", "select") and not isinstance(value, str):
+                return jsonify({"ok": False, "error": key + " 必须是字符串"}), 400
+            if expected == "select" and value not in schema.get("options", []):
+                return jsonify({"ok": False, "error": key + " 值不在可选范围内"}), 400
+            cfg[key] = value
+            if key in _RESTART_KEYS:
+                restart_required = True
+            if key in _RESCAN_KEYS:
+                rescan_required = True
+        write_json(CONFIG_FILE, cfg)
+        settings = {}
+        for key, schema in SETTINGS_SCHEMA.items():
+            settings[key] = cfg.get(key, schema["default"])
+        return jsonify({
+            "ok": True,
+            "settings": settings,
+            "restart_required": restart_required,
+            "rescan_required": rescan_required,
+        })
 
     @app.route("/api/ratings", methods=["GET"])
     def api_get_ratings():

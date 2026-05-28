@@ -12,7 +12,7 @@ const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, get
 const { pickHeroItem, renderHero, renderRowSection, renderCardOverlay, renderHomeCard, renderContinueCard, showSkeleton } = MW.cards;
 const { renderGenreTags, renderPrimaryMeta, renderDoubanTags, detailHero, findFirstEpisode, renderSeasonCard, renderInlineEpisodes, renderSeasonDoubanTags, episodeEntry, renderEpisodeCard } = MW.detail;
 const { renderCastSection, renderPersonDetail } = MW.person;
-const { openDoubanSetting, saveDoubanId, renderSettings, addSettingsRow, saveSettings } = MW.settings;
+const { openDoubanSetting, saveDoubanId, renderSettings } = MW.settings;
 
 /* State lives in MW.state — always access via MW.state.xxx for reads AND writes */
 
