@@ -1,13 +1,16 @@
 /* ============================================================
    MovieWall — Main Application
    Routing, rendering, and user interaction
-   Depends on: mw-utils.js (MW.util), mw-api.js (MW.api), mw-state.js (MW.state)
+   Depends on: mw-utils.js (MW.util), mw-api.js (MW.api), mw-state.js (MW.state),
+               mw-cards.js (MW.cards), mw-detail.js (MW.detail)
    ============================================================ */
 
 /* ===== MW Module Aliases ===== */
 const { escapeHtml, escapeJs, titleOf, tmdb, douban, seasonTmdb, seasonDouban, creditsCast, artworkUrl, backdropUrl, showToast, highlightText, renderDualRating } = MW.util;
 const { apiPutRating, apiDeleteRating, apiPutHistory, apiToggleFavorite, openFolder, recordPlay } = MW.api;
 const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, getFilteredItems, getContinueItems, normalizeCategoriesConfig, fetchAllData } = MW.state;
+const { pickHeroItem, renderHero, renderRowSection, renderCardOverlay, renderHomeCard, renderContinueCard, showSkeleton } = MW.cards;
+const { renderGenreTags, renderPrimaryMeta, renderDoubanTags, detailHero, findFirstEpisode, renderSeasonCard, renderInlineEpisodes, renderSeasonDoubanTags, episodeEntry, renderEpisodeCard } = MW.detail;
 
 /* State lives in MW.state — always access via MW.state.xxx for reads AND writes */
 
@@ -177,9 +180,9 @@ function clearUserRating(itemId) {
 
 function renderCategoryTabs() {
   const catStats = MW.state.library.stats?.categories || [];
-  // Only "全部" + dynamic categories from library data — no media_type tabs
+  // Only "首页" + dynamic categories from library data — no media_type tabs
   const tabs = [
-    {key:"all", label:"全部"},
+    {key:"all", label:"首页"},
     ...catStats.map(c => ({key:"cat:" + c.key, label: c.name})),
     {key:"favorites", label:"收藏"}
   ];
@@ -300,83 +303,13 @@ function goHome() {
   MW.state.seasonMoreOpen = null;
   MW.state.navStack = [];
   MW.state.expandedSeason = null;
+  MW.state.activeTab = "all";
+  search.value = "";
   renderRoute({type:"home"});
   window.scrollTo({top:0, behavior:"smooth"});
 }
 
 /* ===== Home ===== */
-
-/* ── Hero Banner ────────────────────────────────── */
-
-function pickHeroItem(items, continueItems, hasQuery) {
-  if (hasQuery) return null;
-  const ci = continueItems[0];
-  if (ci) return ci.item;
-  const pick = items[Math.floor(Math.random() * Math.min(3, items.length))];
-  return pick || items[0] || null;
-}
-
-function renderHero(item) {
-  if (!item) return '';
-  const t = tmdb(item);
-  const d = douban(item);
-  const backdropRaw = t.backdrop_url || artworkUrl(item, "thumb") || t.poster_url || artworkUrl(item, "poster");
-  const posterRaw = artworkUrl(item, "poster") || t.poster_url;
-  const heroRating = d.rating || t.rating || "";
-  const genres = (t.genres || []).slice(0, 3);
-  const isShow = item.type === "show";
-  const firstEp = isShow ? findFirstEpisode(item) : null;
-  const hist = getItemHistory(item);
-  const playAction = isShow && firstEp
-    ? "playMedia('" + escapeJs(firstEp.ep.path) + "'," + episodeEntry(item, firstEp.season, firstEp.ep, firstEp.season.title + " · " + firstEp.ep.title) + ")"
-    : hist ? "playItemHistory('" + item.id + "')" : "openDetail('" + item.id + "')";
-  const playLabel = isShow && hist ? "▶ 继续播放" : (hist ? "▶ 继续播放" : "▶ 立即观看");
-
-  const typeLabel = isShow ? ((item.season_count || 0) + ' 季 · ' + (item.episode_count || 0) + ' 集') : '电影';
-
-  // Page-level full-viewport backdrop (image + gradient overlay, 100vh)
-  let pageBg = '';
-  if (backdropRaw) {
-    pageBg += '<div class="page-backdrop">'
-      + '<div class="page-backdrop-img" style="background-image:url(\'' + backdropRaw + '\')"></div>'
-      + '<div class="page-backdrop-overlay"></div>'
-      + '</div>';
-  }
-
-  return pageBg
-    + '<div class="hero' + (hist ? ' is-continue' : '') + '">'
-    + '<div class="hero-content">'
-    + '<div class="hero-badge">' + (hist ? '继续观看' : '今日推荐') + '</div>'
-    + '<h1 class="hero-title">' + escapeHtml(titleOf(item)) + '</h1>'
-    + '<div class="hero-meta">'
-    + (heroRating ? '<span class="rating-badge lg' + (d.rating ? ' douban' : '') + '">★ ' + Number(heroRating).toFixed(1) + '</span>' : '')
-    + (item.year ? '<span class="year">' + escapeHtml(item.year) + '</span>' : '')
-    + '<span class="year">' + escapeHtml(typeLabel) + '</span>'
-    + (genres.length ? genres.map(g => '<span class="genre-tag">' + escapeHtml(g) + '</span>').join('') : '')
-    + '</div>'
-    + '<div class="hero-overview">' + escapeHtml(t.overview || d.synopsis || "") + '</div>'
-    + '<div class="hero-actions">'
-    + '<button class="cta-btn" onclick="event.stopPropagation();' + playAction + '">' + playLabel + '</button>'
-    + '<button class="cta-btn secondary' + (isFavorite(item.id) ? ' favorited' : '') + '" onclick="event.stopPropagation();toggleFavorite(\'' + item.id + '\')">' + (isFavorite(item.id) ? '♥ 已收藏' : '♡ 收藏') + '</button>'
-    + '<button class="cta-btn secondary" onclick="event.stopPropagation();openDetail(\'' + item.id + '\')">详情</button>'
-    + '</div></div>'
-    + (posterRaw ? '<div class="hero-poster"><img src="' + posterRaw + '" loading="lazy" alt=""></div>' : '')
-    + '</div>';
-}
-
-/* ── Horizontal Scroll Row ──────────────────────── */
-
-function renderRowSection(title, items, renderFn, moreKey) {
-  if (!items || !items.length) return '';
-  const moreLink = moreKey ? ' onclick="setTab(\'' + moreKey + '\')"' : '';
-  return '<section class="row-section">'
-    + '<div class="row-header"><h2>' + escapeHtml(title) + '</h2>'
-    + (moreLink ? '<span class="row-more"' + moreLink + '>查看全部 →</span>' : '')
-    + '</div>'
-    + '<div class="row-shell"><div class="row-scroll">'
-    + items.map(renderFn).join('')
-    + '</div></div></section>';
-}
 
 /* ── Home Page ──────────────────────────────────── */
 
@@ -400,7 +333,7 @@ function renderHome() {
   const hasQuery = search.value.trim().length > 0;
   const continueItems = hasQuery ? [] : getContinueItems();
 
-  // ── "全部" tab → Hero + dynamic category row layout ────
+  // ── "首页" tab → Hero + dynamic category row layout ────
   if (MW.state.activeTab === "all" && !hasQuery) {
     const heroItem = pickHeroItem(items, continueItems, hasQuery);
 
@@ -457,97 +390,7 @@ function renderHome() {
   app.innerHTML = html;
 }
 
-/* ===== Card Overlay ===== */
-
-function primaryPlayAction(item) {
-  const hist = getItemHistory(item);
-  if (hist) return "playItemHistory('" + item.id + "')";
-  if (item.type === "movie" && item.path) {
-    const entry = "{media_id:'" + item.id + "',type:'movie',path:'" + escapeJs(item.path) + "',title:'" + escapeJs(titleOf(item)) + "',show_title:'" + escapeJs(titleOf(item)) + "',label:'电影',short_label:'电影'}";
-    return "playMedia('" + escapeJs(item.path) + "'," + entry + ")";
-  }
-  if (item.type === "show") {
-    const firstEp = findFirstEpisode(item);
-    if (firstEp) {
-      return "playMedia('" + escapeJs(firstEp.ep.path) + "'," + episodeEntry(item, firstEp.season, firstEp.ep, firstEp.season.title + " · " + firstEp.ep.title) + ")";
-    }
-  }
-  return "openDetail('" + item.id + "')";
-}
-
-function renderCardOverlay(item) {
-  return '<div class="card-overlay">'
-    + '<div class="poster-actions">'
-    + '<button class="poster-play" onclick="event.stopPropagation();' + primaryPlayAction(item) + '" title="播放">▶</button>'
-    + '</div>'
-    + '</div>';
-}
-
-function renderHomeCard(item) {
-  const q = search.value.trim();
-  const fav = isFavorite(item.id);
-  const t = tmdb(item);
-  const d = douban(item);
-  const score = d.rating || t.rating || "";
-  const epCount = item.type === "show" ? (item.episode_count || 0) : 0;
-  const showCount = item.type === "show" && epCount > 0;
-  const badges = (score ? '<div class="card-badge-score">★ ' + Number(score).toFixed(1) + '</div>' : '')
-    + (showCount ? '<div class="card-badge-episodes">' + epCount + ' 集</div>' : '')
-    + (item.year ? '<div class="card-badge-year">' + escapeHtml(item.year) + '</div>' : '');
-  return '<article class="card' + (fav ? ' is-fav' : '') + '" onclick="openDetail(\'' + item.id + '\')">'
-    + '<div class="card-poster">'
-    + (fav ? '<div class="fav-badge">♥</div>' : '')
-    + badges
-    + (artworkUrl(item, "poster")
-      ? '<img src="' + artworkUrl(item, "poster") + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder\\\'>' + escapeHtml(titleOf(item)) + '</div>\'">'
-      : '<div class="placeholder">' + escapeHtml(titleOf(item)) + '</div>')
-    + renderCardOverlay(item)
-    + '</div>'
-    + '<div class="card-body"><h4 class="card-title">' + highlightText(titleOf(item), q) + '</h4></div>'
-    + '</article>';
-}
-
-function renderContinueCard(entry) {
-  const {item, hist} = entry;
-  const title = hist.show_title || hist.title || titleOf(item);
-  const label = hist.short_label || hist.label || "";
-  const isShow = item.type === "show";
-  // Episode context: if hist has episode_number/season_number, show it
-  const epContext = hist.season_number ? 'S' + String(hist.season_number).padStart(2,'0') + 'E' + String(hist.episode_number || 0).padStart(2,'0') : label;
-  let progressPct = 0;
-  if (isShow) {
-    const totalEps = item.episode_count || 0;
-    const watchedEps = (item.seasons || []).reduce((sum, s) =>
-      sum + (s.episodes || []).filter(ep => MW.state.historyCache[ep.id]).length, 0);
-    progressPct = totalEps ? Math.round(watchedEps / totalEps * 100) : 0;
-  }
-  const histEntry = "{media_id:'" + item.id + "',type:'" + item.type + "',path:'" + escapeJs(hist.path) + "',title:'" + escapeJs(title) + "',show_title:'" + escapeJs(hist.show_title || title) + "',label:'" + escapeJs(epContext) + "',short_label:'" + escapeJs(epContext) + "'}";
-  const t = tmdb(item);
-  const d = douban(item);
-  const score = d.rating || t.rating || "";
-  return '<article class="card continue-card" onclick="playMedia(\'' + escapeJs(hist.path) + '\',' + histEntry + ')">'
-    + '<div class="card-poster">'
-    + (score ? '<div class="card-badge-score">★ ' + Number(score).toFixed(1) + '</div>' : '')
-    + (artworkUrl(item, "poster")
-      ? '<img src="' + artworkUrl(item, "poster") + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder\\\'>' + escapeHtml(title) + '</div>\'">'
-      : '<div class="placeholder">' + escapeHtml(title) + '</div>')
-    + '<div class="card-overlay">'
-    + '<div class="poster-actions"><button class="poster-play" onclick="event.stopPropagation();playMedia(\'' + escapeJs(hist.path) + '\',' + histEntry + ')" title="继续播放">▶</button></div>'
-    + '</div>'
-    + (progressPct > 0 ? '<div class="card-progress"><div class="card-progress-bar" style="width:' + progressPct + '%"></div></div>' : '')
-    + '</div>'
-    + '<div class="card-body">'
-    + '<div class="continue-kicker">▶ ' + escapeHtml(isShow ? epContext : '继续观看') + '</div>'
-    + '<h4 class="card-title">' + escapeHtml(title) + '</h4></div>'
-    + '</article>';
-}
-
 /* ===== Home Render ===== */
-
-function showSkeleton() {
-  const card = '<div class="skeleton-card"><div class="skeleton-poster skeleton"></div><div class="skeleton-title skeleton"></div></div>';
-  app.innerHTML = '<section class="section loading-section"><div class="grid">' + card.repeat(12) + '</div></section>';
-}
 
 function openDetail(id) { navigateTo({type:"detail", id}); }
 function toggleSeason(showId, seasonNumber) {
@@ -608,85 +451,6 @@ function moreMenuHtml(item, extraActions) {
 }
 
 /* ===== Detail Page ===== */
-
-function renderGenreTags(item) {
-  const t = tmdb(item);
-  const genres = t.genres || [];
-  return genres.map(g => '<span class="genre-tag">' + escapeHtml(g) + '</span>').join('');
-}
-
-function renderPrimaryMeta(item) {
-  const parts = [];
-  if (item.year) parts.push('<span class="year">' + escapeHtml(item.year) + '</span>');
-  const dualHtml = renderDualRating(item);
-  if (dualHtml) parts.push(dualHtml);
-  if (item.type === "show") {
-    parts.push('<span class="year">' + (item.season_count || 0) + ' 季 · ' + (item.episode_count || 0) + ' 集</span>');
-  }
-  return parts.join('<span class="sep">·</span>');
-}
-
-function renderDoubanTags(item) {
-  const d = douban(item);
-  const abstract = d.abstract || "";
-  const abstract_2 = d.abstract_2 || "";
-  const cast = creditsCast(item);
-  if (!abstract && !abstract_2 && !cast.length) return '';
-  // Skip douban abstract parts that already appear as TMDB genres
-  const t = tmdb(item);
-  const existingGenres = (t.genres || []).map(g => g.toLowerCase());
-  let tags = [];
-  if (abstract) {
-    abstract.split(' / ').forEach(part => {
-      part = part.trim();
-      if (!part) return;
-      if (existingGenres.includes(part.toLowerCase())) return;
-      if (/^\d+分钟$/.test(part)) {
-        tags.push('<span class="genre-tag douban-tag runtime">' + escapeHtml(part) + '</span>');
-      } else {
-        tags.push('<span class="genre-tag douban-tag">' + escapeHtml(part) + '</span>');
-      }
-    });
-  }
-  let html = '<div class="douban-meta">';
-  if (tags.length) html += '<div class="genre-tags douban-tags">' + tags.join('') + '</div>';
-  if (abstract_2) {
-    html += '<div class="douban-cast"><span class="cast-label">演员</span> <span class="cast-names">' + escapeHtml(abstract_2.replace(/ \/ /g, ' · ')) + '</span></div>';
-  } else if (cast.length) {
-    html += '<div class="douban-cast"><span class="cast-label">演员</span> <span class="cast-names">' + escapeHtml(cast.slice(0, 8).map(c => c.person?.name).filter(Boolean).join(' · ')) + '</span></div>';
-  }
-  html += '</div>';
-  return html;
-}
-
-function detailHero(item, bodyHtml, castHtml) {
-  const bg = backdropUrl(item);
-  const poster = tmdb(item).poster_url || artworkUrl(item, "poster") || artworkUrl(item, "thumb");
-
-  // Full-viewport backdrop layer
-  let pageBg = '';
-  if (bg) {
-    pageBg += '<div class="page-backdrop">'
-      + '<div class="page-backdrop-img" style="background-image:url(\'' + bg + '\')"></div>'
-      + '<div class="page-backdrop-overlay"></div>'
-      + '</div>';
-  }
-
-  return pageBg
-    + '<section class="detail-hero cinematic-detail">'
-    + '<div class="detail-hero-content">'
-    + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回" aria-label="返回">'
-    + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
-    + '</button>'
-    + '<div class="detail-poster">'
-    + (poster ? '<img src="' + poster + '" loading="lazy">' : '<div class="placeholder">' + escapeHtml(titleOf(item)) + '</div>')
-    + '</div>'
-    + '<div class="detail-info">' + bodyHtml
-    + (castHtml ? '<div class="detail-cast-inline">' + castHtml + '</div>' : '')
-    + '</div>'
-    + '</div>'
-    + '</section>';
-}
 
 function renderMovieDetail(item) {
   MW.state.currentView = {type:"detail", id:item.id};
@@ -774,74 +538,6 @@ function renderShowDetail(item) {
   app.innerHTML = detailHero(item, body, castHtml) + seasonHtml;
 }
 
-function findFirstEpisode(show) {
-  if (!show?.seasons?.length) return null;
-  for (const s of show.seasons) {
-    if (s.episodes?.length) return {season: s, ep: s.episodes[0]};
-  }
-  return null;
-}
-
-/* ===== Season Card (enhanced) ===== */
-
-function renderSeasonCard(show, season, expanded) {
-  const epWatched = season.episodes.filter(ep => MW.state.historyCache[ep.id]).length;
-  const progressPct = season.episode_count ? Math.round(epWatched / season.episode_count * 100) : 0;
-  const sMeta = seasonDouban(season);
-  const tmdbSeasonData = seasonTmdb(season);
-  const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
-  const seasonPoster = tmdbSeasonData.poster_url || sMeta.poster_url || artworkUrl(season, "poster") || "";
-  const moreId = "smore-" + show.id + "-" + season.season_number;
-  const showMore = MW.state.seasonMoreOpen === moreId;
-  const moreHtml = '<div class="season-more-wrap" onclick="event.stopPropagation()">'
-    + '<button class="season-more-btn" onclick="event.stopPropagation();toggleSeasonMore(\'' + show.id + '\',' + season.season_number + ')">···</button>'
-    + (showMore ? '<div class="season-more-dropdown">'
-      + '<button onclick="event.stopPropagation();updateSingleItem(\'' + show.id + '\')">更新此季</button>'
-      + '<button onclick="event.stopPropagation();toggleSeasonMore(\'' + show.id + '\',' + season.season_number + ');navigateTo({type:\'season\', showId:\'' + show.id + '\', seasonNumber:' + season.season_number + '})">季详情</button>'
-      + '</div>' : '')
-    + '</div>';
-  return '<article class="card season-card' + (expanded ? ' season-expanded' : '') + (showMore ? ' smore-open' : '') + '" onclick="toggleSeason(\'' + show.id + '\',' + season.season_number + ')">'
-    + '<div class="card-poster">'
-    + (seasonPoster
-      ? '<img src="' + seasonPoster + '" loading="lazy">'
-      : '<div class="placeholder">' + escapeHtml(titleOf(show)) + '</div>')
-    + '</div>'
-    + '<div class="card-body"><h4 class="card-title" style="display:inline">' + escapeHtml(season.title) + '</h4>'
-    + moreHtml
-    + '<div class="season-meta">'
-    + (seasonYear ? '<span class="year">' + seasonYear + '</span>' : '')
-    + (season.episode_count ? '<span>' + season.episode_count + ' 集</span>' : '')
-    + (sMeta.rating ? '<span class="rating-badge douban sm">豆瓣 ' + Number(sMeta.rating).toFixed(1) + '</span>' : '')
-    + (tmdbSeasonData.rating ? '<span class="rating-badge tmdb sm">TMDB ' + Number(tmdbSeasonData.rating).toFixed(1) + '</span>' : '')
-    + '</div>'
-    + (progressPct > 0
-      ? '<div class="season-progress"><div class="season-progress-bar" style="width:' + progressPct + '%"></div></div><div class="season-progress-text">已看 ' + epWatched + '/' + (season.episode_count || 0) + '</div>'
-      : '')
-    + '</div></article>';
-}
-
-function renderInlineEpisodes(show, season) {
-  const sMeta = seasonDouban(season);
-  const tmdbSeasonData = seasonTmdb(season);
-  const seasonSynopsis = sMeta.synopsis || tmdbSeasonData.overview || "";
-  const seasonPoster = tmdbSeasonData.poster_url || sMeta.poster_url || artworkUrl(season, "poster") || "";
-  let detailHtml = '';
-  if (seasonSynopsis || seasonPoster || sMeta.cast_info || sMeta.air_date) {
-    detailHtml = '<div class="season-detail-card">'
-      + (seasonPoster ? '<img class="season-detail-poster" src="' + seasonPoster + '" loading="lazy">' : '')
-      + '<div class="season-detail-body">'
-      + (seasonSynopsis ? '<div class="season-detail-synopsis">' + escapeHtml(seasonSynopsis) + '</div>' : '')
-      + (sMeta.cast_info ? '<div class="season-detail-cast"><span class="cast-label">主演</span> <span>' + escapeHtml(sMeta.cast_info.replace(/\s*\/\s*/g, ' · ')) + '</span></div>' : '')
-      + (sMeta.air_date ? '<div class="season-detail-air"><span class="cast-label">年份</span> <span>' + escapeHtml(sMeta.air_date) + '</span></div>' : '')
-      + '</div></div>';
-  }
-  return '<div class="inline-episodes">'
-    + detailHtml
-    + '<div class="episode-list">'
-    + (season.episodes || []).map(ep => renderEpisodeCard(show, season, ep)).join("")
-    + '</div></div>';
-}
-
 /* ===== Season Detail ===== */
 
 function renderSeasonDetail(show, season) {
@@ -910,73 +606,6 @@ function renderSeasonDetail(show, season) {
     + '<div class="episode-list">'
     + (season.episodes || []).map(ep => renderEpisodeCard(show, season, ep)).join("")
     + '</div></section>';
-}
-
-function renderSeasonDoubanTags(show, season) {
-  const sMeta = seasonDouban(season);
-  const d = douban(show);
-  const abstract = d.abstract || "";
-  let tags = [];
-  if (abstract) {
-    abstract.split(' / ').forEach(part => {
-      part = part.trim();
-      if (!part) return;
-      tags.push('<span class="genre-tag douban-tag' + (/^\d+分钟$/.test(part) ? ' runtime' : '') + '">' + escapeHtml(part) + '</span>');
-    });
-  }
-  let html = '<div class="douban-meta">';
-  if (tags.length) html += '<div class="genre-tags douban-tags">' + tags.join('') + '</div>';
-  if (sMeta.cast_info) {
-    html += '<div class="douban-cast"><span class="cast-label">演员</span> <span class="cast-names">' + escapeHtml(sMeta.cast_info.replace(/ \/ /g, ' · ')) + '</span></div>';
-  } else if (d.abstract_2) {
-    html += '<div class="douban-cast"><span class="cast-label">演员</span> <span class="cast-names">' + escapeHtml(d.abstract_2.replace(/ \/ /g, ' · ')) + '</span></div>';
-  }
-  html += '</div>';
-  return html;
-}
-
-/* ===== Episode Entry ===== */
-
-function episodeEntry(show, season, ep, label) {
-  return "{media_id:'" + show.id + "',episode_id:'" + ep.id + "',season_id:'" + season.id + "',type:'episode',path:'" + escapeJs(ep.path) + "',title:'" + escapeJs(ep.title) + "',show_title:'" + escapeJs(titleOf(show)) + "',season_number:" + season.season_number + ",episode_number:" + (ep.episode_number || 0) + ",label:'" + escapeJs(label) + "',short_label:'S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0") + "'}";
-}
-
-/* ===== Episode Card (compact row) ===== */
-
-function renderEpisodeCard(show, season, ep) {
-  const hist = getItemHistory(show);
-  const active = hist && hist.episode_id === ep.id;
-  const label = season.title + " · " + ep.title;
-  const entry = episodeEntry(show, season, ep, label);
-  const epHist = MW.state.historyCache[ep.id];
-  const epm = ep.metadata?.tmdb || {};
-  const stillSrc = epm.still_url || artworkUrl(ep, "thumb") || artworkUrl(ep, "poster");
-  const epNum = "S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0");
-  const epName = epm.title || ep.title || ep.filename || epNum;
-  const epOverview = epm.overview || ep.overview || "";
-  const epRating = epm.rating ? '<span class="ep-badge rating-badge sm">★ ' + Number(epm.rating).toFixed(1) + '</span>' : '';
-  const epRuntime = epm.runtime ? '<span class="ep-badge">' + epm.runtime + '分钟</span>' : '';
-
-  return '<div class="episode-row' + (active ? ' active-episode' : '') + '" onclick="playMedia(\'' + escapeJs(ep.path) + '\',' + entry + ')">'
-    + '<div class="episode-row-thumb">'
-    + (stillSrc
-      ? '<img src="' + stillSrc + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder episode-placeholder\\\'>' + escapeHtml(epNum) + '</div>\'">'
-      : '<div class="placeholder episode-placeholder">' + escapeHtml(epNum) + '</div>')
-    + '<div class="play-badge"><span>▶</span></div>'
-    + '</div>'
-
-    + '<div class="episode-row-body">'
-    + '<div class="episode-row-top">'
-    + '<span class="episode-row-num' + (active ? ' active-num' : '') + '">' + epNum + '</span>'
-    + '<span class="episode-row-title">' + escapeHtml(epName) + '</span>'
-    + '<span class="episode-row-meta">' + epRating + epRuntime + '</span>'
-    + '</div>'
-    + (epOverview ? '<div class="episode-row-overview">' + escapeHtml(epOverview) + '</div>' : '')
-    + (epHist ? '<div class="episode-row-progress"><div class="bar" style="width:100%"></div></div>' : '')
-    + '</div>'
-
-    + '<div class="episode-row-play"><button onclick="event.stopPropagation();playMedia(\'' + escapeJs(ep.path) + '\',' + entry + ')" title="播放">▶</button></div>'
-    + '</div>';
 }
 
 /* ===== Settings ===== */
