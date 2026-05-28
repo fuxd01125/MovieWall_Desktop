@@ -55,6 +55,13 @@ MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 
   <p><em>📺 剧集季集展开 - 清晰的结构化管理</em></p>
 </div>
 
+<br/>
+
+<div align="center">
+  <img src="./screenshots/setting.png" alt="设置界面" width="100%"/>
+  <p><em>⚙️ 剧集季集展开 - 清晰的结构化管理</em></p>
+</div>
+
 ---
 
 ## ✨ 功能特性
@@ -91,6 +98,7 @@ pip install -r requirements.txt
 ```bash
 copy config.example.json config.json
 ```
+> 之后可在应用内直接通过**设置面板**修改配置，无需再手动编辑文件。
 
 ### 3️⃣ 运行应用
 修改 `config.json` 后直接运行：
@@ -126,7 +134,8 @@ python run.py
 | `log_level` | `INFO` | 日志输出等级 |
 | `enable_file_log` | `true` | 是否启用文件日志 |
 
-> 💡 `categories` 仅用于自定义显示名称。放入 `library_root` 的新文件夹会自动被发现并显示，无需手动修改配置。
+> 💡 `categories` 仅用于自定义显示名称。放入 `library_root` 的新文件夹会自动被发现并显示，无需手动修改配置。  
+> 所有配置项也可在应用内通过**设置面板**直接修改，无需手动编辑 `config.json`。
 
 ---
 
@@ -136,7 +145,7 @@ python run.py
 
 1. 点击上方徽章前往 TMDB 设置页面
 2. 免费申请 API v3 Key
-3. 获取后填入 `config.json` 的 `tmdb_api_key` 字段
+3. 获取后填入 `config.json`或者设置中 的 `tmdb_api_key` 字段
 
 ---
 
