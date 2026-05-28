@@ -7,7 +7,7 @@
 
 > 🎬 本地影视海报墙桌面应用 · 打造类似 Netflix / Jellyfin 的流媒体浏览体验
 
-MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 TMDB 数据源获取元数据，生成流媒体风格海报墙界面。支持调用 PotPlayer / VLC 等外部播放器，提供独立的收藏与评分系统。
+MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 TMDB 数据源获取元数据，生成流媒体风格海报墙界面。支持调用 PotPlayer 等外部播放器，提供独立的收藏与评分系统。
 
 ---
 
@@ -18,9 +18,9 @@ MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 
 ### 📦 最新版本
 [![Download Latest](https://img.shields.io/badge/📥_Download_Latest_Release-2ea44f?style=for-the-badge&logo=github&logoColor=white)](https://github.com/fuxd01125/MovieWall_Desktop/releases/latest)
 
-| 平台 | 文件 | 说明 |
-|------|------|------|
-| 🪟 Windows | `MovieWall.exe` | 推荐，解压后双击运行 |
+| 平台               | 文件 | 说明 |
+|------------------|------|------|
+| 🖥️Windows          | `MovieWall.exe` | 推荐，解压后双击运行 |
 | 🐧 Linux / 🍎 macOS | 暂不支持 | 可使用源码运行 |
 
 > ⚠️ **Windows 用户注意**：程序由 PyInstaller 打包，部分杀毒软件可能误报。如遇拦截，请添加信任或选择下方 **📥 从源码运行**。
@@ -73,8 +73,7 @@ MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 
 - 👥 **演员系统**：支持演员详情页与关联作品列表
 - 📺 **智能剧集识别**：自动检测 Season / Episode 结构
 - ⭐ **独立评分与收藏**：本地用户评分、收藏功能与专属 Tab
-- 🎞️ **外部播放器联动**：支持 PotPlayer（同步播放记录） / VLC
-- 🗄️ **轻量架构**：SQLite 本地数据库 + Flask + pywebview 桌面框架
+- 🎞️ **外部播放器联动**：支持 PotPlayer同步播放记录
 - 📦 **单文件分发**：PyInstaller 打包，开箱即用
 
 ### 🎯 项目定位
@@ -100,15 +99,10 @@ copy config.example.json config.json
 ```
 > 之后可在应用内直接通过**设置面板**修改配置，无需再手动编辑文件。
 
-### 3️⃣ 运行应用
+### 3️⃣ 运行应用开发模式
 修改 `config.json` 后直接运行：
 
-**🖥️ 桌面模式（推荐）**
-```bash
-release/dist/MovieWall.exe
-```
 
-**💻 开发模式**
 ```bash
 python run.py
 ```
