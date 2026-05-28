@@ -3,16 +3,14 @@
   "categories": {
     "Movies": "电影",
     "TV Shows": "剧集",
-    "Anime": "动漫"
+    "Anime": "动漫",
+    "Docuseries": "纪录片",
+    "Reality Show": "综艺"    
   },
   "players": [
     {
       "name": "PotPlayer",
       "path": "C:\\Program Files\\PotPlayer\\PotPlayerMini64.exe"
-    },
-    {
-      "name": "VLC",
-      "path": "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
     }
   ],
   "generate_thumbnails": true,
