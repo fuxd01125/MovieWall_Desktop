@@ -1,65 +1,21 @@
-let library = {items: [], stats: {}};
-let activeCategory = "all";
-let activeTab = "all";
-let currentView = {type: "home"};
-let navStack = [];
-let players = [];
-let categoriesConfig = {};
-let expandedSeason = null;
-let moreMenuOpen = null;
-let seasonMoreOpen = null;
+/* ============================================================
+   MovieWall — Main Application
+   Routing, rendering, and user interaction
+   Depends on: mw-utils.js (MW.util), mw-api.js (MW.api), mw-state.js (MW.state)
+   ============================================================ */
+
+/* ===== MW Module Aliases ===== */
+const { escapeHtml, escapeJs, titleOf, tmdb, douban, seasonTmdb, seasonDouban, creditsCast, artworkUrl, backdropUrl, showToast, highlightText, renderDualRating } = MW.util;
+const { apiPutRating, apiDeleteRating, apiPutHistory, apiToggleFavorite, openFolder, recordPlay } = MW.api;
+const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, getFilteredItems, getContinueItems, normalizeCategoriesConfig, fetchAllData } = MW.state;
+
+/* State lives in MW.state — always access via MW.state.xxx for reads AND writes */
 
 const app = document.querySelector("#app");
 const search = document.querySelector("#search");
 const catTabs = document.querySelector("#catTabs");
 const scanBtn = document.querySelector("#scanBtn");
 const breadcrumb = document.querySelector("#breadcrumb");
-
-let ratingsCache = {};
-let historyCache = {};
-let favoritesCache = [];
-let historyPollInterval = null;
-
-function loadHistory() { return historyCache; }
-function loadRatings() { return ratingsCache; }
-function isFavorite(id) { return favoritesCache.includes(id); }
-
-async function apiPutRating(mediaId, score) {
-  await fetch("/api/ratings", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({media_id:mediaId, score})});
-}
-async function apiDeleteRating(mediaId) {
-  await fetch("/api/ratings/" + mediaId, {method:"DELETE"});
-}
-async function apiPutHistory(entry) {
-  await fetch("/api/history", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(entry)});
-}
-
-async function apiToggleFavorite(mediaId) {
-  const res = await fetch("/api/favorites", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({media_id: mediaId})});
-  return await res.json();
-}
-
-function toggleFavorite(itemId) {
-  const wasFav = isFavorite(itemId);
-  if (wasFav) {
-    favoritesCache = favoritesCache.filter(id => id !== itemId);
-  } else {
-    favoritesCache.push(itemId);
-  }
-  renderRoute(currentView);
-  apiToggleFavorite(itemId);
-  showToast(wasFav ? '已取消收藏' : '已收藏');
-}
-
-function recordPlay(entry) {
-  // IMPORTANT: must use Unix seconds (same as backend time.time()) not ISO string.
-  // SQLite ORDER BY sorts numbers vs text differently — using ISO string would
-  // cause load_all_history() to always return this entry instead of the monitor's.
-  const item = {...entry, played_at: Date.now() / 1000};
-  historyCache[item.media_id] = item;
-  historyCache.__last = item;
-  apiPutHistory(item);
-}
 
 /* ===== Real-time History Sync (polls backend during playback) ===== */
 
@@ -83,25 +39,25 @@ async function _pollHistory() {
     let changed = false;
     for (const mediaId of Object.keys(fresh)) {
       const entry = fresh[mediaId];
-      const old = historyCache[mediaId];
+      const old = MW.state.historyCache[mediaId];
       const oldTime = old ? _normalizeTime(old.played_at) : 0;
       const newTime = _normalizeTime(entry.played_at);
       if (!old || old.episode_id !== entry.episode_id || newTime > oldTime) {
-        historyCache[mediaId] = entry;
+        MW.state.historyCache[mediaId] = entry;
         changed = true;
       }
     }
     // Recompute __last as the entry with the largest played_at
     let latest = null;
     let latestTime = 0;
-    for (const mediaId of Object.keys(historyCache)) {
+    for (const mediaId of Object.keys(MW.state.historyCache)) {
       if (mediaId === '__last') continue;
-      const e = historyCache[mediaId];
+      const e = MW.state.historyCache[mediaId];
       const t = _normalizeTime(e.played_at);
       if (t > latestTime) { latestTime = t; latest = e; }
     }
-    if (latest) historyCache.__last = latest;
-    if (changed) renderRoute(currentView);
+    if (latest) MW.state.historyCache.__last = latest;
+    if (changed) renderRoute(MW.state.currentView);
   } catch (e) { /* ignore poll errors */ }
 }
 
@@ -137,7 +93,7 @@ async function openPerson(personId) {
 }
 
 function renderPersonDetail(data) {
-  currentView = {type:"person", data};
+  MW.state.currentView = {type:"person", data};
   renderCategoryTabs();
   renderBreadcrumb();
 
@@ -192,87 +148,35 @@ function renderPersonDetail(data) {
 }
 
 function startHistoryPolling() {
-  if (historyPollInterval) return;
-  historyPollInterval = setInterval(_pollHistory, 3000);
+  if (MW.state.historyPollInterval) return;
+  MW.state.historyPollInterval = setInterval(_pollHistory, 3000);
 }
 
 function stopHistoryPolling() {
-  if (historyPollInterval) {
-    clearInterval(historyPollInterval);
-    historyPollInterval = null;
+  if (MW.state.historyPollInterval) {
+    clearInterval(MW.state.historyPollInterval);
+    MW.state.historyPollInterval = null;
   }
 }
 
-function getLastHistory() { return historyCache.__last || null; }
-function getItemHistory(item) { return item ? historyCache[item.id] : null; }
-function getUserRating(item) { return item ? ratingsCache[item.id] || null : null; }
-
 function setUserRating(itemId, score) {
-  ratingsCache[itemId] = {score: Number(score), rated_at: new Date().toISOString()};
-  renderRoute(currentView);
+  MW.state.ratingsCache[itemId] = {score: Number(score), rated_at: new Date().toISOString()};
+  renderRoute(MW.state.currentView);
   apiPutRating(itemId, score);
   showToast("评分已保存 " + Number(score).toFixed(1) + " / 10");
 }
 
 function clearUserRating(itemId) {
-  delete ratingsCache[itemId];
-  renderRoute(currentView);
+  delete MW.state.ratingsCache[itemId];
+  renderRoute(MW.state.currentView);
   apiDeleteRating(itemId);
   showToast("评分已清除");
-}
-
-function escapeHtml(s) {
-  return String(s || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
-}
-function escapeJs(s) {
-  return String(s || "").replaceAll("\\","\\\\").replaceAll("'","\\'").replaceAll("\n","\\n").replaceAll("\r","\\r");
-}
-function titleOf(item) { return item?.display_title || item?.title || item?.filename || "未命名"; }
-function tmdb(item) { return item?.metadata?.tmdb || {}; }
-function douban(item) { return item?.metadata?.douban || {}; }
-function seasonTmdb(season) { return season?.metadata?.tmdb || season?.tmdb || {}; }
-function seasonDouban(season) { return season?.metadata?.douban || season?.douban || {}; }
-function creditsCast(item) { return item?.metadata?.credits?.cast || []; }
-
-function artworkUrl(item, kind="poster") {
-  if (!item) return "";
-  // Shows: TMDB poster takes priority over local file (which may be an episode screenshot)
-  if (item.type === "show") {
-    const t = tmdb(item);
-    if (kind === "poster" && t.poster_url) return t.poster_url;
-  }
-  if (item[kind]) {
-    if (String(item[kind]).startsWith("http")) return item[kind];
-    return "/api/artwork/" + item.id + "/" + kind;
-  }
-  if (item.type === "episode" && kind === "thumb") return "";
-  const t = tmdb(item);
-  if (kind === "poster" && t.poster_url) return t.poster_url;
-  if ((kind === "thumb" || kind === "backdrop") && t.backdrop_url) return t.backdrop_url;
-  if ((kind === "thumb" || kind === "backdrop") && t.poster_url) return t.poster_url;
-  return "";
-}
-
-function backdropUrl(item) {
-  return tmdb(item).backdrop_url || artworkUrl(item, "thumb") || artworkUrl(item, "poster");
-}
-
-function showToast(msg, duration) {
-  const el = document.createElement("div");
-  el.className = "toast";
-  el.textContent = msg;
-  document.body.appendChild(el);
-  requestAnimationFrame(() => el.classList.add("show"));
-  setTimeout(() => {
-    el.classList.remove("show");
-    setTimeout(() => el.remove(), 300);
-  }, duration || 2500);
 }
 
 /* ===== Category Tabs ===== */
 
 function renderCategoryTabs() {
-  const catStats = library.stats?.categories || [];
+  const catStats = MW.state.library.stats?.categories || [];
   // Only "全部" + dynamic categories from library data — no media_type tabs
   const tabs = [
     {key:"all", label:"全部"},
@@ -280,54 +184,16 @@ function renderCategoryTabs() {
     {key:"favorites", label:"收藏"}
   ];
   catTabs.innerHTML = tabs.map(t =>
-    '<button class="cat-tab' + (activeTab === t.key ? ' active' : '') + '" onclick="setTab(\'' + t.key + '\')">' + t.label + '</button>'
+    '<button class="cat-tab' + (MW.state.activeTab === t.key ? ' active' : '') + '" onclick="setTab(\'' + t.key + '\')">' + t.label + '</button>'
   ).join("");
 }
 
 function setTab(key) {
-  moreMenuOpen = null;
-  seasonMoreOpen = null;
-  activeTab = key;
-  navStack = [];
+  MW.state.moreMenuOpen = null;
+  MW.state.seasonMoreOpen = null;
+  MW.state.activeTab = key;
+  MW.state.navStack = [];
   renderHome();
-}
-
-/* ===== Highlight ===== */
-
-function highlightText(text, query) {
-  if (!query) return escapeHtml(text);
-  const escaped = escapeHtml(text);
-  const q = escapeHtml(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return escaped.replace(new RegExp('(' + q + ')', 'gi'), '<mark>$1</mark>');
-}
-
-/* ===== Rating Badge (unified) ===== */
-
-function renderRatingBadge(score, opts) {
-  if (score == null) return '';
-  const num = Number(score);
-  if (isNaN(num) || num <= 0) return '';
-  const size = opts?.sm ? ' sm' : opts?.lg ? ' lg' : '';
-  return '<span class="rating-badge' + size + '">★ ' + num.toFixed(1) + '</span>';
-}
-
-function renderDualRating(item) {
-  const t = tmdb(item);
-  const d = douban(item);
-  const tRating = t.rating || "";
-  const dRating = d.rating || "";
-  const dCount = d.rating_count || "";
-  let html = '';
-  if (dRating) {
-    html += '<span class="rating-badge douban">豆瓣 ' + Number(dRating).toFixed(1) + '</span>';
-  }
-  if (tRating) {
-    html += '<span class="rating-badge tmdb">TMDB ' + Number(tRating).toFixed(1) + '</span>';
-  }
-  if (dCount) {
-    html += '<span class="rating-badge douban-count">' + Number(dCount).toLocaleString() + ' 评</span>';
-  }
-  return html;
 }
 
 /* ===== Star Rating (user input) ===== */
@@ -362,16 +228,16 @@ function starRatingWidget(item) {
 
 function renderBreadcrumb() {
   let html = '<span class="bc-item" onclick="goHome()">首页</span>';
-  if (currentView.type === "detail" || currentView.type === "season") {
-    const item = findItem(currentView.type === "detail" ? currentView.id : currentView.showId);
+  if (MW.state.currentView.type === "detail" || MW.state.currentView.type === "season") {
+    const item = findItem(MW.state.currentView.type === "detail" ? MW.state.currentView.id : MW.state.currentView.showId);
     if (item) {
       html += '<span class="bc-sep">/</span><span class="bc-item" onclick="goHome()">' + escapeHtml(item.category_name) + '</span>';
       html += '<span class="bc-sep">/</span><span class="bc-item bc-current">' + escapeHtml(titleOf(item)) + '</span>';
     }
   }
-  if (currentView.type === "season") {
-    const show = findItem(currentView.showId);
-    const season = (show?.seasons || []).find(s => Number(s.season_number) === Number(currentView.seasonNumber));
+  if (MW.state.currentView.type === "season") {
+    const show = findItem(MW.state.currentView.showId);
+    const season = (show?.seasons || []).find(s => Number(s.season_number) === Number(MW.state.currentView.seasonNumber));
     if (season) {
       html += '<span class="bc-sep">/</span><span class="bc-item bc-current">' + escapeHtml(season.title) + '</span>';
     }
@@ -381,20 +247,20 @@ function renderBreadcrumb() {
 
 /* ===== Routing ===== */
 
-function findItem(id) { return library.items.find(i => i.id === id); }
-function findEpisode(episodeId) {
-  for (const show of library.items.filter(i => i.type === "show")) {
-    for (const season of show.seasons || []) {
-      for (const episode of season.episodes || []) {
-        if (episode.id === episodeId) return {show, season, episode};
-      }
-    }
+function toggleFavorite(itemId) {
+  const wasFav = isFavorite(itemId);
+  if (wasFav) {
+    MW.state.favoritesCache = MW.state.favoritesCache.filter(id => id !== itemId);
+  } else {
+    MW.state.favoritesCache.push(itemId);
   }
-  return null;
+  renderRoute(MW.state.currentView);
+  apiToggleFavorite(itemId);
+  showToast(wasFav ? '已取消收藏' : '已收藏');
 }
 
 function renderRoute(view) {
-  if (!view || view.type === "home") { moreMenuOpen = null; return renderHome(); }
+  if (!view || view.type === "home") { MW.state.moreMenuOpen = null; return renderHome(); }
   if (view.type === "detail") {
     const item = findItem(view.id);
     if (!item) return renderHome();
@@ -412,28 +278,28 @@ function renderRoute(view) {
 }
 
 function navigateTo(view) {
-  moreMenuOpen = null;
-  seasonMoreOpen = null;
-  navStack.push({...currentView});
-  expandedSeason = null;
+  MW.state.moreMenuOpen = null;
+  MW.state.seasonMoreOpen = null;
+  MW.state.navStack.push({...MW.state.currentView});
+  MW.state.expandedSeason = null;
   renderRoute(view);
   window.scrollTo({top:0, behavior:"smooth"});
 }
 
 function goBackSmart() {
-  moreMenuOpen = null;
-  seasonMoreOpen = null;
-  const prev = navStack.pop();
-  expandedSeason = null;
+  MW.state.moreMenuOpen = null;
+  MW.state.seasonMoreOpen = null;
+  const prev = MW.state.navStack.pop();
+  MW.state.expandedSeason = null;
   renderRoute(prev || {type:"home"});
   window.scrollTo({top:0, behavior:"smooth"});
 }
 
 function goHome() {
-  moreMenuOpen = null;
-  seasonMoreOpen = null;
-  navStack = [];
-  expandedSeason = null;
+  MW.state.moreMenuOpen = null;
+  MW.state.seasonMoreOpen = null;
+  MW.state.navStack = [];
+  MW.state.expandedSeason = null;
   renderRoute({type:"home"});
   window.scrollTo({top:0, behavior:"smooth"});
 }
@@ -515,18 +381,18 @@ function renderRowSection(title, items, renderFn, moreKey) {
 /* ── Home Page ──────────────────────────────────── */
 
 function renderHome() {
-  currentView = {type:"home"};
+  MW.state.currentView = {type:"home"};
   renderCategoryTabs();
   renderBreadcrumb();
 
-  if (!library.items.length) {
+  if (!MW.state.library.items.length) {
     app.innerHTML = '<section class="section"><div class="empty">暂无内容。请确认路径正确，然后点击"扫描"。</div></section>';
     return;
   }
 
   const items = getFilteredItems();
   if (!items.length) {
-    const emptyMsg = activeTab === "favorites" ? "暂无收藏内容" : "没有匹配的内容。试试其他分类或搜索词。";
+    const emptyMsg = MW.state.activeTab === "favorites" ? "暂无收藏内容" : "没有匹配的内容。试试其他分类或搜索词。";
     app.innerHTML = '<section class="section"><div class="empty">' + emptyMsg + '</div></section>';
     return;
   }
@@ -535,10 +401,10 @@ function renderHome() {
   const continueItems = hasQuery ? [] : getContinueItems();
 
   // ── "全部" tab → Hero + dynamic category row layout ────
-  if (activeTab === "all" && !hasQuery) {
+  if (MW.state.activeTab === "all" && !hasQuery) {
     const heroItem = pickHeroItem(items, continueItems, hasQuery);
 
-    const catStats = library.stats?.categories || [];
+    const catStats = MW.state.library.stats?.categories || [];
     const recent = [...items].sort((a, b) => (b.updated_at || b.created_at || 0) - (a.updated_at || a.created_at || 0)).slice(0, 20);
 
     let html = renderHero(heroItem);
@@ -547,7 +413,7 @@ function renderHome() {
       html += renderRowSection("继续观看", continueItems, renderContinueCard);
     }
     // Favorites row
-    const favItems = items.filter(i => favoritesCache.includes(i.id));
+    const favItems = items.filter(i => MW.state.favoritesCache.includes(i.id));
     if (favItems.length > 0) {
       html += renderRowSection("收藏", favItems, renderHomeCard, "favorites");
     }
@@ -582,56 +448,13 @@ function renderHome() {
       + '<div class="section-header"><h2>搜索结果</h2><small>' + items.length + ' 项</small></div>'
       + '<div class="grid">' + items.map(renderHomeCard).join('') + '</div></section>';
   } else {
-    const sectionTitle = activeTab === "favorites" ? "收藏" : escapeHtml(items[0]?.category_name || '');
+    const sectionTitle = MW.state.activeTab === "favorites" ? "收藏" : escapeHtml(items[0]?.category_name || '');
     html += '<section class="section">'
       + '<div class="section-header"><h2>' + sectionTitle + '</h2><small>' + items.length + ' 项</small></div>'
       + '<div class="grid">' + items.map(renderHomeCard).join('') + '</div></section>';
   }
 
   app.innerHTML = html;
-}
-
-function getFilteredItems() {
-  const q = search.value.trim().toLowerCase();
-  return library.items.filter(item => {
-    // Favorites tab — only show favorited items
-    if (activeTab === "favorites") {
-      return favoritesCache.includes(item.id);
-    }
-    // Only category-based tab filtering — no media_type filtering
-    if (activeTab.startsWith("cat:")) {
-      const catKey = activeTab.slice(4);
-      if (item.category_key !== catKey) return false;
-    }
-    // activeTab === "all" → no filter
-    if (!q) return true;
-    let bag = (titleOf(item) + " " + (item.title || "") + " " + (item.year || "") + " " + (item.category_name || "")).toLowerCase();
-    if (item.type === "movie") bag += " " + (item.filename || "") + " " + (item.folder || "");
-    if (item.type === "show") {
-      for (const s of item.seasons || []) for (const ep of s.episodes || []) bag += " " + (s.title || "") + " " + (ep.title || "") + " " + (ep.filename || "");
-    }
-    return bag.includes(q);
-  });
-}
-
-function getContinueItems() {
-  const items = [];
-  for (const [mediaId, hist] of Object.entries(historyCache)) {
-    if (mediaId === "__last") continue;
-    const item = findItem(mediaId);
-    if (item) items.push({item, hist});
-  }
-  const q = search.value.trim().toLowerCase();
-  return items.filter(({item}) => {
-    // Only category-based tab filtering — no media_type filtering
-    if (activeTab.startsWith("cat:")) {
-      const catKey = activeTab.slice(4);
-      if (item.category_key !== catKey) return false;
-    }
-    if (!q) return true;
-    const bag = (titleOf(item) + " " + (item.year || "")).toLowerCase();
-    return bag.includes(q);
-  }).sort((a, b) => new Date(b.hist.played_at||0) - new Date(a.hist.played_at||0));
 }
 
 /* ===== Card Overlay ===== */
@@ -695,7 +518,7 @@ function renderContinueCard(entry) {
   if (isShow) {
     const totalEps = item.episode_count || 0;
     const watchedEps = (item.seasons || []).reduce((sum, s) =>
-      sum + (s.episodes || []).filter(ep => historyCache[ep.id]).length, 0);
+      sum + (s.episodes || []).filter(ep => MW.state.historyCache[ep.id]).length, 0);
     progressPct = totalEps ? Math.round(watchedEps / totalEps * 100) : 0;
   }
   const histEntry = "{media_id:'" + item.id + "',type:'" + item.type + "',path:'" + escapeJs(hist.path) + "',title:'" + escapeJs(title) + "',show_title:'" + escapeJs(hist.show_title || title) + "',label:'" + escapeJs(epContext) + "',short_label:'" + escapeJs(epContext) + "'}";
@@ -728,9 +551,9 @@ function showSkeleton() {
 
 function openDetail(id) { navigateTo({type:"detail", id}); }
 function toggleSeason(showId, seasonNumber) {
-  if (expandedSeason === showId + "|" + seasonNumber) { expandedSeason = null; renderRoute(currentView); return; }
-  expandedSeason = showId + "|" + seasonNumber;
-  renderRoute(currentView);
+  if (MW.state.expandedSeason === showId + "|" + seasonNumber) { MW.state.expandedSeason = null; renderRoute(MW.state.currentView); return; }
+  MW.state.expandedSeason = showId + "|" + seasonNumber;
+  renderRoute(MW.state.currentView);
   requestAnimationFrame(() => {
     const el = document.querySelector('.season-expanded-wrap');
     if (el) el.scrollIntoView({behavior:"smooth", block:"start"});
@@ -740,7 +563,7 @@ function toggleSeason(showId, seasonNumber) {
 /* ===== Playback ===== */
 
 async function playMedia(path, entry, player) {
-  const route = {...currentView};
+  const route = {...MW.state.currentView};
   const body = {path};
   if (player) body.player = player;
   // Send episode context so backend can monitor PotPlayer and sync actual last played file
@@ -758,40 +581,27 @@ async function playMedia(path, entry, player) {
   if (entry) { recordPlay(entry); startHistoryPolling(); renderRoute(route); }
 }
 
-function playSavedHistory() {
-  const last = getLastHistory();
-  if (last) playMedia(last.path, last);
-}
-
 function playItemHistory(itemId) {
-  const hist = historyCache[itemId];
+  const hist = MW.state.historyCache[itemId];
   if (hist) playMedia(hist.path, hist);
-}
-
-async function openFolder(folder) {
-  await fetch("/api/open_folder", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({folder})});
-}
-
-function renderPlayButtons(path, entryStr) {
-  return '<button onclick="playMedia(\'' + escapeJs(path) + '\',' + entryStr + ')">▶ 播放</button>';
 }
 
 /* ===== More Menu ===== */
 
-function toggleMore(id, e) { if (e) e.stopPropagation(); moreMenuOpen = moreMenuOpen === id ? null : id; renderRoute(currentView); }
+function toggleMore(id, e) { if (e) e.stopPropagation(); MW.state.moreMenuOpen = MW.state.moreMenuOpen === id ? null : id; renderRoute(MW.state.currentView); }
 function toggleSeasonMore(showId, sn, e) {
   if (e) e.stopPropagation();
   const id = "smore-" + showId + "-" + sn;
-  seasonMoreOpen = seasonMoreOpen === id ? null : id;
-  renderRoute(currentView);
+  MW.state.seasonMoreOpen = MW.state.seasonMoreOpen === id ? null : id;
+  renderRoute(MW.state.currentView);
 }
 
 function moreMenuHtml(item, extraActions) {
   const id = item.id;
-  const open = moreMenuOpen === id;
+  const open = MW.state.moreMenuOpen === id;
   let actions = '';
-  if (players && players.length > 1) {
-    actions += players.map(p => '<button onclick="playMedia(\'' + escapeJs(item.path) + '\',{media_id:\'' + item.id + '\'},\'' + escapeJs(p.name) + '\')">用 ' + escapeHtml(p.name) + ' 播放</button>').join("");
+  if (MW.state.players && MW.state.players.length > 1) {
+    actions += MW.state.players.map(p => '<button onclick="playMedia(\'' + escapeJs(item.path) + '\',{media_id:\'' + item.id + '\'},\'' + escapeJs(p.name) + '\')">用 ' + escapeHtml(p.name) + ' 播放</button>').join("");
   }
   if (extraActions) actions += extraActions;
   return '<div class="more-wrap"><button class="ghost more-btn" onclick="toggleMore(\'' + id + '\',event)">···</button>' + (open ? '<div class="more-dropdown" onclick="event.stopPropagation()">' + actions + '</div>' : '') + '</div>';
@@ -879,7 +689,7 @@ function detailHero(item, bodyHtml, castHtml) {
 }
 
 function renderMovieDetail(item) {
-  currentView = {type:"detail", id:item.id};
+  MW.state.currentView = {type:"detail", id:item.id};
   renderCategoryTabs();
   renderBreadcrumb();
   const meta = tmdb(item);
@@ -908,7 +718,7 @@ function renderMovieDetail(item) {
 }
 
 function renderShowDetail(item) {
-  currentView = {type:"detail", id:item.id};
+  MW.state.currentView = {type:"detail", id:item.id};
   renderCategoryTabs();
   renderBreadcrumb();
   const meta = tmdb(item);
@@ -939,7 +749,7 @@ function renderShowDetail(item) {
     + '</div>';
 
   const castHtml = renderCastSection(cast);
-  const isExpanded = (snum) => expandedSeason === item.id + "|" + snum;
+  const isExpanded = (snum) => MW.state.expandedSeason === item.id + "|" + snum;
   const seasonCards = (item.seasons || []).map((s, i) => renderSeasonCard(item, s, isExpanded(s.season_number)));
 
   let seasonHtml = '<section class="section">'
@@ -975,14 +785,14 @@ function findFirstEpisode(show) {
 /* ===== Season Card (enhanced) ===== */
 
 function renderSeasonCard(show, season, expanded) {
-  const epWatched = season.episodes.filter(ep => historyCache[ep.id]).length;
+  const epWatched = season.episodes.filter(ep => MW.state.historyCache[ep.id]).length;
   const progressPct = season.episode_count ? Math.round(epWatched / season.episode_count * 100) : 0;
   const sMeta = seasonDouban(season);
   const tmdbSeasonData = seasonTmdb(season);
   const seasonYear = sMeta.air_date ? sMeta.air_date.toString().slice(0,4) : season.year || show.year || "";
   const seasonPoster = tmdbSeasonData.poster_url || sMeta.poster_url || artworkUrl(season, "poster") || "";
   const moreId = "smore-" + show.id + "-" + season.season_number;
-  const showMore = seasonMoreOpen === moreId;
+  const showMore = MW.state.seasonMoreOpen === moreId;
   const moreHtml = '<div class="season-more-wrap" onclick="event.stopPropagation()">'
     + '<button class="season-more-btn" onclick="event.stopPropagation();toggleSeasonMore(\'' + show.id + '\',' + season.season_number + ')">···</button>'
     + (showMore ? '<div class="season-more-dropdown">'
@@ -1035,7 +845,7 @@ function renderInlineEpisodes(show, season) {
 /* ===== Season Detail ===== */
 
 function renderSeasonDetail(show, season) {
-  currentView = {type:"season", showId:show.id, seasonNumber:season.season_number};
+  MW.state.currentView = {type:"season", showId:show.id, seasonNumber:season.season_number};
   renderCategoryTabs();
   renderBreadcrumb();
 
@@ -1138,7 +948,7 @@ function renderEpisodeCard(show, season, ep) {
   const active = hist && hist.episode_id === ep.id;
   const label = season.title + " · " + ep.title;
   const entry = episodeEntry(show, season, ep, label);
-  const epHist = historyCache[ep.id];
+  const epHist = MW.state.historyCache[ep.id];
   const epm = ep.metadata?.tmdb || {};
   const stillSrc = epm.still_url || artworkUrl(ep, "thumb") || artworkUrl(ep, "poster");
   const epNum = "S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0");
@@ -1169,23 +979,14 @@ function renderEpisodeCard(show, season, ep) {
     + '</div>';
 }
 
-function playFirstEpisode(showId, seasonNumber) {
-  const show = findItem(showId);
-  const season = (show?.seasons || []).find(s => Number(s.season_number) === Number(seasonNumber));
-  const ep = season?.episodes?.[0];
-  if (!show || !season || !ep) return;
-  const label = season.title + " · " + ep.title;
-  playMedia(ep.path, {media_id:show.id, episode_id:ep.id, season_id:season.id, type:"episode", path:ep.path, title:ep.title, show_title:titleOf(show), season_number:season.season_number, episode_number:ep.episode_number || 0, label, short_label:"S" + String(season.season_number).padStart(2,"0") + "E" + String(ep.episode_number || 0).padStart(2,"0")});
-}
-
 /* ===== Settings ===== */
 
 let settingDoubanId = "";
 let settingDoubanItemId = "";
 
 function openDoubanSetting(itemId, currentDoubanId) {
-  moreMenuOpen = null;
-  seasonMoreOpen = null;
+  MW.state.moreMenuOpen = null;
+  MW.state.seasonMoreOpen = null;
   settingDoubanItemId = itemId;
   settingDoubanId = currentDoubanId || "";
   renderSettings();
@@ -1212,34 +1013,17 @@ async function saveDoubanId() {
   settingDoubanItemId = "";
   settingDoubanId = "";
   const libRes = await fetch("/api/library");
-  library = await libRes.json();
-  navigateTo({type:"detail", id: itemId});
-}
-
-async function saveDoubanIdAndUpdate() {
-  const id = settingDoubanId.trim();
-  const itemId = settingDoubanItemId;
-  if (!itemId) return;
-  settingDoubanItemId = "";
-  settingDoubanId = "";
-  await updateSingleItem(itemId, id);
-}
-
-async function clearDoubanId(itemId) {
-  await fetch("/api/metadata/douban/" + itemId, {method:"DELETE"});
-  showToast("已清除豆瓣关联");
-  const libRes = await fetch("/api/library");
-  library = await libRes.json();
+  MW.state.library = await libRes.json();
   navigateTo({type:"detail", id: itemId});
 }
 
 function renderSettings() {
   stopHistoryPolling();
-  navStack = [];
+  MW.state.navStack = [];
   renderCategoryTabs();
   renderBreadcrumb();
-  const catKeys = Object.keys(categoriesConfig);
-  const rows = catKeys.map((key, i) => '<div class="settings-cat-row"><input class="sc-folder" value="' + escapeHtml(key) + '" placeholder="文件夹名"><input class="sc-name" value="' + escapeHtml(categoriesConfig[key].name) + '" placeholder="显示名"><button class="ghost" onclick="this.closest(\'.settings-cat-row\').remove()">✕</button></div>').join("");
+  const catKeys = Object.keys(MW.state.categoriesConfig);
+  const rows = catKeys.map((key, i) => '<div class="settings-cat-row"><input class="sc-folder" value="' + escapeHtml(key) + '" placeholder="文件夹名"><input class="sc-name" value="' + escapeHtml(MW.state.categoriesConfig[key].name) + '" placeholder="显示名"><button class="ghost" onclick="this.closest(\'.settings-cat-row\').remove()">✕</button></div>').join("");
 
   let doubanSection = '';
   if (settingDoubanItemId) {
@@ -1306,30 +1090,8 @@ async function saveSettings() {
 
 async function loadLibrary() {
   showSkeleton();
-  const [libRes, ratingsRes, historyRes, playersRes, configRes, favRes] = await Promise.all([
-    fetch("/api/library"), fetch("/api/ratings"), fetch("/api/history"),
-    fetch("/api/players"), fetch("/api/config"), fetch("/api/favorites")
-  ]);
-  library = await libRes.json();
-  ratingsCache = await ratingsRes.json();
-  historyCache = await historyRes.json();
-  players = await playersRes.json();
-  categoriesConfig = (await configRes.json()).categories || {};
-  normalizeCategoriesConfig();
-  favoritesCache = await favRes.json();
+  await fetchAllData();
   renderHome();
-}
-
-function normalizeCategoriesConfig() {
-  const normalized = {};
-  for (const [key, value] of Object.entries(categoriesConfig || {})) {
-    if (typeof value === "string") {
-      normalized[key] = {name: value};
-    } else {
-      normalized[key] = {name: value?.name || key};
-    }
-  }
-  categoriesConfig = normalized;
 }
 
 async function _pollProgress(bar) {
@@ -1355,15 +1117,15 @@ async function _pollProgress(bar) {
 }
 
 async function _loadAfterScan() {
-  moreMenuOpen = null;
-  seasonMoreOpen = null;
+  MW.state.moreMenuOpen = null;
+  MW.state.seasonMoreOpen = null;
   showSkeleton();
   const res = await fetch("/api/library");
-  library = await res.json();
-  const s = library.stats;
+  MW.state.library = await res.json();
+  const s = MW.state.library.stats;
   const catCount = s.categories ? s.categories.length : 0;
   showToast("完成 - " + (s.movies + s.shows) + " 部 / " + s.episodes + " 集" + (catCount ? " · " + catCount + " 个分类" : ""));
-  navStack = [];
+  MW.state.navStack = [];
   renderHome();
 }
 
@@ -1413,29 +1175,29 @@ async function updateSingleItem(mediaId, doubanId) {
   if (bar) bar.classList.remove("active");
   if (data.ok) {
     showToast("已更新");
-    moreMenuOpen = null;
-    seasonMoreOpen = null;
+    MW.state.moreMenuOpen = null;
+    MW.state.seasonMoreOpen = null;
     const libRes = await fetch("/api/library");
-    library = await libRes.json();
-    renderRoute(currentView);
+    MW.state.library = await libRes.json();
+    renderRoute(MW.state.currentView);
   } else {
     showToast("更新失败: " + (data.error || "未知错误"), 3000);
   }
 }
 
 document.addEventListener("click", (e) => {
-  if (moreMenuOpen && !e.target.closest(".more-wrap") && !e.target.closest(".more-dropdown")) {
-    moreMenuOpen = null;
-    renderRoute(currentView);
+  if (MW.state.moreMenuOpen && !e.target.closest(".more-wrap") && !e.target.closest(".more-dropdown")) {
+    MW.state.moreMenuOpen = null;
+    renderRoute(MW.state.currentView);
   }
-  if (seasonMoreOpen && !e.target.closest(".season-more-wrap") && !e.target.closest(".season-more-dropdown")) {
-    seasonMoreOpen = null;
-    renderRoute(currentView);
+  if (MW.state.seasonMoreOpen && !e.target.closest(".season-more-wrap") && !e.target.closest(".season-more-dropdown")) {
+    MW.state.seasonMoreOpen = null;
+    renderRoute(MW.state.currentView);
   }
 });
 
-search.addEventListener("input", () => { moreMenuOpen = null; seasonMoreOpen = null; navStack = []; renderHome(); });
-window.addEventListener("keydown", e => { if (e.key === "Escape" && currentView.type !== "home") goBackSmart(); });
+search.addEventListener("input", () => { MW.state.moreMenuOpen = null; MW.state.seasonMoreOpen = null; MW.state.navStack = []; renderHome(); });
+window.addEventListener("keydown", e => { if (e.key === "Escape" && MW.state.currentView.type !== "home") goBackSmart(); });
 
 // Mousewheel horizontal scroll for cast-scroll containers
 document.addEventListener("wheel", (e) => {
