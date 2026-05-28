@@ -1,8 +1,8 @@
 /* ============================================================
    MovieWall — Main Application
    Routing, rendering, and user interaction
-   Depends on: mw-utils.js (MW.util), mw-api.js (MW.api), mw-state.js (MW.state),
-               mw-cards.js (MW.cards), mw-detail.js (MW.detail)
+   Depends on: mw-utils.js, mw-api.js, mw-state.js,
+               mw-detail.js, mw-cards.js, mw-person.js, mw-settings.js
    ============================================================ */
 
 /* ===== MW Module Aliases ===== */
@@ -11,6 +11,8 @@ const { apiPutRating, apiDeleteRating, apiPutHistory, apiToggleFavorite, openFol
 const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, getFilteredItems, getContinueItems, normalizeCategoriesConfig, fetchAllData } = MW.state;
 const { pickHeroItem, renderHero, renderRowSection, renderCardOverlay, renderHomeCard, renderContinueCard, showSkeleton } = MW.cards;
 const { renderGenreTags, renderPrimaryMeta, renderDoubanTags, detailHero, findFirstEpisode, renderSeasonCard, renderInlineEpisodes, renderSeasonDoubanTags, episodeEntry, renderEpisodeCard } = MW.detail;
+const { renderCastSection, renderPersonDetail } = MW.person;
+const { openDoubanSetting, saveDoubanId, renderSettings, addSettingsRow, saveSettings } = MW.settings;
 
 /* State lives in MW.state — always access via MW.state.xxx for reads AND writes */
 
@@ -62,92 +64,6 @@ async function _pollHistory() {
     if (latest) MW.state.historyCache.__last = latest;
     if (changed) renderRoute(MW.state.currentView);
   } catch (e) { /* ignore poll errors */ }
-}
-
-/* ===== Cast Section ===== */
-
-function renderCastSection(cast) {
-  if (!cast || !cast.length) return '';
-  return '<section class="section cast-section">'
-    + '<div class="section-header"><h2>演员</h2><small>' + cast.length + ' 人</small></div>'
-    + '<div class="cast-scroll">'
-    + cast.map(c => {
-      const p = c.person || {};
-      const img = p.profile_url
-        ? '<img src="' + p.profile_url + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'cast-avatar-placeholder\\\'>' + escapeHtml((p.name || '?')[0]) + '</div>\'">'
-        : '<div class="cast-avatar-placeholder">' + escapeHtml((p.name || '?')[0]) + '</div>';
-      return '<article class="cast-card" onclick="openPerson(\'' + escapeJs(p.id || '') + '\')">'
-        + '<div class="cast-avatar">' + img + '</div>'
-        + '<div class="cast-info">'
-        + '<div class="cast-name">' + escapeHtml(p.name || '') + '</div>'
-        + '<div class="cast-role">' + escapeHtml(c.character || c.job || '') + '</div>'
-        + '</div></article>';
-    }).join('')
-    + '</div></section>';
-}
-
-async function openPerson(personId) {
-  if (!personId) return;
-  showSkeleton();
-  const res = await fetch("/api/person/" + encodeURIComponent(personId));
-  if (!res.ok) { showToast("演员信息未能加载", 3000); goHome(); return; }
-  const data = await res.json();
-  navigateTo({type:"person", data});
-}
-
-function renderPersonDetail(data) {
-  MW.state.currentView = {type:"person", data};
-  renderCategoryTabs();
-  renderBreadcrumb();
-
-  const img = data.profile_url
-    ? '<img src="' + data.profile_url + '" loading="lazy">'
-    : '<div class="placeholder">' + escapeHtml((data.name || '?')[0]) + '</div>';
-  const aka = data.also_known_as && data.also_known_as.length
-    ? '<div class="person-aka">又名: ' + data.also_known_as.map(n => escapeHtml(n)).join(' / ') + '</div>' : '';
-
-  // Hero section — back button + avatar + info
-  let hero = '<div class="person-hero">'
-    + '<button class="back-hero-btn" onclick="event.stopPropagation();goBackSmart()" title="返回" aria-label="返回">'
-    + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
-    + '</button>'
-    + '<div class="person-poster">' + img + '</div>'
-    + '<div class="person-info">'
-    + '<h1>' + escapeHtml(data.name || '') + '</h1>'
-    + (data.original_name && data.original_name !== data.name ? '<div class="person-original-name">' + escapeHtml(data.original_name) + '</div>' : '')
-    + (data.known_for_department ? '<div class="person-dept">' + escapeHtml(data.known_for_department) + '</div>' : '')
-    + (data.birthday ? '<div class="person-meta"><span class="meta-label">出生</span> ' + escapeHtml(data.birthday) + (data.deathday ? ' — ' + escapeHtml(data.deathday) : '') + '</div>' : '')
-    + (data.place_of_birth ? '<div class="person-meta"><span class="meta-label">出生地</span> ' + escapeHtml(data.place_of_birth) + '</div>' : '')
-    + aka
-    + (data.biography ? '<div class="person-bio">' + escapeHtml(data.biography) + '</div>' : '')
-    + '</div></div>';
-
-  // Works section
-  const works = data.works || [];
-  let worksHtml = '';
-  if (works.length) {
-    worksHtml = '<section class="section"><div class="section-header"><h2>本地作品</h2><small>' + works.length + ' 部</small></div>'
-      + '<div class="grid">'
-      + works.map(w => {
-        const item = findItem(w.media_id);
-        const poster = item ? artworkUrl(item, "poster") : '';
-        const title = w.display_title || w.media_title || '';
-        const role = w.character ? '饰 ' + w.character : (w.job || w.department || '');
-        return '<article class="card" onclick="openDetail(\'' + escapeJs(w.media_id) + '\')">'
-          + '<div class="card-poster">'
-          + (poster
-            ? '<img src="' + poster + '" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'placeholder\\\'>' + escapeHtml(title) + '</div>\'">'
-            : '<div class="placeholder">' + escapeHtml(title) + '</div>')
-          + '</div>'
-          + '<div class="card-body">'
-          + '<h4 class="card-title">' + escapeHtml(title) + '</h4>'
-          + (role ? '<div class="person-role">' + escapeHtml(role) + '</div>' : '')
-          + '</div></article>';
-      }).join('')
-      + '</div></section>';
-  }
-
-  app.innerHTML = '<div class="person-page">' + hero + worksHtml + '</div>';
 }
 
 function startHistoryPolling() {
@@ -606,115 +522,6 @@ function renderSeasonDetail(show, season) {
     + '<div class="episode-list">'
     + (season.episodes || []).map(ep => renderEpisodeCard(show, season, ep)).join("")
     + '</div></section>';
-}
-
-/* ===== Settings ===== */
-
-let settingDoubanId = "";
-let settingDoubanItemId = "";
-
-function openDoubanSetting(itemId, currentDoubanId) {
-  MW.state.moreMenuOpen = null;
-  MW.state.seasonMoreOpen = null;
-  settingDoubanItemId = itemId;
-  settingDoubanId = currentDoubanId || "";
-  renderSettings();
-}
-
-async function saveDoubanId() {
-  const id = settingDoubanId.trim();
-  const itemId = settingDoubanItemId;
-  if (!itemId) return;
-  const rating = document.getElementById("doubanRating")?.value?.trim();
-  const synopsis = document.getElementById("doubanSynopsis")?.value?.trim();
-  const body = {douban_id: id};
-  if (rating) body.rating = parseFloat(rating);
-  if (synopsis) body.synopsis = synopsis;
-  const res = await fetch("/api/metadata/douban/" + itemId, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
-  const data = await res.json();
-  if (data.douban) {
-    showToast("豆瓣数据已更新");
-  } else if (id) {
-    showToast("未找到该豆瓣ID的数据（已保存ID，可手动输入评分）", 4000);
-  } else {
-    showToast("已清除豆瓣ID");
-  }
-  settingDoubanItemId = "";
-  settingDoubanId = "";
-  const libRes = await fetch("/api/library");
-  MW.state.library = await libRes.json();
-  navigateTo({type:"detail", id: itemId});
-}
-
-function renderSettings() {
-  stopHistoryPolling();
-  MW.state.navStack = [];
-  renderCategoryTabs();
-  renderBreadcrumb();
-  const catKeys = Object.keys(MW.state.categoriesConfig);
-  const rows = catKeys.map((key, i) => '<div class="settings-cat-row"><input class="sc-folder" value="' + escapeHtml(key) + '" placeholder="文件夹名"><input class="sc-name" value="' + escapeHtml(MW.state.categoriesConfig[key].name) + '" placeholder="显示名"><button class="ghost" onclick="this.closest(\'.settings-cat-row\').remove()">✕</button></div>').join("");
-
-  let doubanSection = '';
-  if (settingDoubanItemId) {
-    const item = findItem(settingDoubanItemId);
-    const itemName = item ? titleOf(item) : settingDoubanItemId;
-    const itemD = item ? douban(item) : {};
-    const curRating = itemD.rating || "";
-    const curSynopsis = itemD.synopsis || "";
-    const doubanUrl = settingDoubanId ? ('https://movie.douban.com/subject/' + settingDoubanId + '/') : '';
-    doubanSection = '<div class="settings-section"><div class="section-header"><h2>豆瓣关联</h2></div>'
-      + '<p class="settings-hint">豆瓣目前无法自动爬取数据（WAF 屏蔽），请输入豆瓣 ID 后手动填写评分和剧情简介。</p>'
-      + '<p class="settings-hint">豆瓣 ID 可在豆瓣网页 URL 中找到，如 <code>https://movie.douban.com/subject/<strong>10440076</strong>/</code></p>'
-      + '<div class="settings-cat-row"><input id="doubanIdInput" style="flex:0.4" value="' + escapeHtml(settingDoubanId) + '" placeholder="豆瓣 ID"><input id="doubanRating" style="flex:0.15" value="' + escapeHtml(String(curRating)) + '" placeholder="评分"><button onclick="saveDoubanId()">保存</button>'
-      + (doubanUrl ? '<button class="ghost" onclick="window.open(\'' + doubanUrl + '\')">打开豆瓣页</button>' : '')
-      + '<button class="ghost" onclick="settingDoubanItemId=\'\';navigateTo({type:\'detail\', id:\'' + escapeJs(settingDoubanItemId) + '\'})">取消</button></div>'
-      + '<div class="settings-cat-row" style="margin-top:6px"><textarea id="doubanSynopsis" style="flex:1;min-height:60px;padding:8px;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--text);font-family:var(--font);font-size:13px;resize:vertical" placeholder="剧情简介（可选）">' + escapeHtml(curSynopsis) + '</textarea></div>'
-      + '</div>';
-  }
-
-  app.innerHTML = '<section class="section">'
-    + '<div class="section-header"><h2>设置</h2></div>'
-
-    + doubanSection
-
-    + '<div class="settings-section"><div class="section-header"><h2>目录分类</h2></div>'
-    + '<p class="settings-hint">修改后点击保存将自动重新扫描。</p>'
-    + '<div id="settingsCats">' + (rows || '<div class="empty">暂无分类</div>') + '</div>'
-    + '<div class="settings-actions"><button onclick="addSettingsRow()">+ 添加分类</button></div></div>'
-
-    + '<div class="settings-section"><div class="section-header"><h2>关于</h2></div>'
-    + '<p class="settings-hint">MovieWall Desktop · 本地影视墙</p>'
-    + '</div>'
-
-    + '<div class="settings-actions"><button onclick="saveSettings()">保存并扫描</button><button class="ghost" onclick="goHome()">返回首页</button></div>'
-    + '</section>';
-
-  if (settingDoubanItemId) {
-    const inp = document.getElementById("doubanIdInput");
-    if (inp) setTimeout(() => inp.focus(), 100);
-  }
-}
-
-function addSettingsRow() {
-  const container = document.getElementById("settingsCats") || app.querySelector("#settingsCats");
-  if (!container) return;
-  const div = document.createElement("div");
-  div.className = "settings-cat-row";
-  div.innerHTML = '<input class="sc-folder" placeholder="文件夹名"><input class="sc-name" placeholder="显示名"><button class="ghost" onclick="this.closest(\'.settings-cat-row\').remove()">✕</button>';
-  container.append(div);
-}
-
-async function saveSettings() {
-  const rows = document.querySelectorAll("#settingsCats .settings-cat-row");
-  const cats = {};
-  for (const row of rows) {
-    const folder = row.querySelector(".sc-folder").value.trim();
-    const name = row.querySelector(".sc-name").value.trim();
-    if (folder && name) cats[folder] = name;
-  }
-  const res = await fetch("/api/config", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({categories: cats})});
-  const data = await res.json();
-  if (data.ok) scanBtn.click();
 }
 
 async function loadLibrary() {
