@@ -3,13 +3,10 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-[![GitHub Release](https://img.shields.io/github/v/release/fuxd01125/MovieWall_Desktop?label=Latest&style=for-the-badge&logo=github)](https://github.com/fuxd01125/MovieWall_Desktop/releases)
-
+[![GitHub Release](https://img.shields.io/github/v/release/fuxd01125/MovieWall_Desktop?label=Latest&style=flat&logo=github)](https://github.com/fuxd01125/MovieWall_Desktop/releases)
 > 🎬 本地影视海报墙桌面应用 · 打造类似 Netflix / Jellyfin 的流媒体浏览体验
 
-MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 TMDB 数据源获取元数据，生成流媒体风格海报墙界面。支持调用 PotPlayer 等外部播放器，提供独立的收藏与评分系统。
-
----
+MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 <a href="https://www.themoviedb.org/settings/api"><img src="https://img.shields.io/badge/TMDB-API KEY-01D277?style=flat" alt="TMDB API" style="vertical-align: middle; margin: 0 3px;"></a> 获取元数据，生成流媒体风格海报墙界面。支持调用 PotPlayer 等外部播放器，提供独立的收藏与评分系统。
 
 ## ⬇️ 下载与安装
 
@@ -31,35 +28,35 @@ MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 
 
 <div align="center">
   <img src="./screenshots/home.png" alt="首页海报墙" width="100%"/>
-  <p><em>🏠 首页海报墙 - 浏览本地影视库</em></p>
+  <p><em>🏠 首页海报墙</em></p>
 </div>
 
 <br/>
 
 <div align="center">
   <img src="./screenshots/category.png" alt="分类界面" width="100%"/>
-  <p><em>📁 分类界面 - 按目录自动分类浏览</em></p>
+  <p><em>📁 分类界面 </em></p>
 </div>
 
 <br/>
 
 <div align="center">
   <img src="./screenshots/detail.png" alt="剧集详情页" width="100%"/>
-  <p><em>🎬 剧集详情页 - 查看元数据与播放控制</em></p>
+  <p><em>🎬 剧集详情页 </em></p>
 </div>
 
 <br/>
 
 <div align="center">
   <img src="./screenshots/season_episode.png" alt="剧集季集展开" width="100%"/>
-  <p><em>📺 剧集季集展开 - 清晰的结构化管理</em></p>
+  <p><em>📺 剧集季集展开 </em></p>
 </div>
 
 <br/>
 
 <div align="center">
   <img src="./screenshots/setting.png" alt="设置界面" width="100%"/>
-  <p><em>⚙️ 剧集季集展开 - 清晰的结构化管理</em></p>
+  <p><em>⚙️ 设置界面 </em></p>
 </div>
 
 ---
@@ -69,7 +66,6 @@ MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 
 ### 🛠️ 核心功能
 - 🖼️ **流媒体风格海报墙**：自动生成本地影视封面墙
 - 📂 **自动目录发现**：无需手动配置，自动扫描子目录并推断分类
-- 🎭 **TMDB 元数据管理**：Season / Episode / People / Credits 独立落表存储
 - 👥 **演员系统**：支持演员详情页与关联作品列表
 - 📺 **智能剧集识别**：自动检测 Season / Episode 结构
 - ⭐ **独立评分与收藏**：本地用户评分、收藏功能与专属 Tab
@@ -77,13 +73,6 @@ MovieWall 会自动扫描本地影视目录，建立媒体数据库，并通过 
 - ⚙️ **完整设置面板**：支持标签页导航、类型校验、热更新提示
 - 🗑️ **媒体管理**：支持从详情页直接删除影视剧（按季或按整剧）
 - 🎞️ **外部播放器联动**：支持 PotPlayer 同步播放记录
-- 📦 **单文件分发**：PyInstaller 打包，开箱即用
-
-### 🎯 项目定位
-MovieWall **不是**在线视频播放器，而是一款专注于：
-- 📁 本地媒体管理系统
-- 🎬 流媒体风格影视墙
-- 💻 轻量 HTPC 前端 / Jellyfin & Emby 风格桌面应用
 
 ---
 
@@ -131,7 +120,7 @@ python run.py
 | `log_level` | `INFO` | 日志输出等级 |
 | `enable_file_log` | `true` | 是否启用文件日志 |
 
-> 💡 `categories` 仅用于自定义显示名称。放入 `library_root` 的新文件夹会自动被发现并显示，无需手动修改配置。  
+> 💡 `categories` 仅用于自定义分类的显示名称。放入 `library_root` 的新文件夹会自动被发现并显示，无需手动修改配置。  
 > 所有配置项也可在应用内通过**设置面板**直接修改，无需手动编辑 `config.json`。
 
 ---
@@ -141,7 +130,7 @@ python run.py
 [![TMDB API](https://img.shields.io/badge/🔑_Get_TMDB_API-032b76?style=for-the-badge&logo=themoviedatabase&logoColor=white&labelColor=01b4e4)](https://www.themoviedb.org/settings/api)
 
 1. 点击上方徽章前往 TMDB 设置页面
-2. 免费申请 API v3 Key
+2. 免费申请 API  Key
 3. 获取后填入 `config.json`或者设置中 的 `tmdb_api_key` 字段
 
 ---
@@ -160,7 +149,7 @@ F:/Download/影视
 │       └── Season 01/
 │           └── Hannibal S01E01.mkv
 │
-└── 纪录片/                            # 自动识别目录（无需额外配置）
+└── 纪录片/                            # 新建分类
 ```
 新目录放入 `library_root` 后会自动发现并显示。
 
@@ -178,7 +167,7 @@ F:/Download/影视
 ## ⚠️ 当前已知问题
 
 - **🌐 豆瓣元数据匹配局限**：因豆瓣无公开稳定 API，采用非官方方式抓取，可能出现匹配错误、季信息复用、评分/简介更新失败等情况。
-- **📊 多数据源差异**：TMDB 季集信息更准确，豆瓣中文简介更完整。两者在年份、标题、季编号上可能存在差异。
+- **📊 多数据源差异**：TMDB 与豆瓣数据在年份、标题、季编号上可能存在差异。
 - **📝 命名规范依赖**：对 `SP` / `OVA` / 多语言混合 / 无集数命名 的识别率会下降，建议尽量使用标准命名格式。
 - **🔄 PotPlayer 记录同步**：依赖 `.dpl` 文件，需开启播放器历史记录。异常退出可能导致记录未及时刷新。
 - **⏱️ 首次扫描较慢**：需执行媒体识别、API 请求、缩略图生成与缓存建立，大媒体库首次运行属正常现象。
