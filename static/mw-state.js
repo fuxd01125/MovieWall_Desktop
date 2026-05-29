@@ -28,7 +28,8 @@ window.MW = window.MW || {};
     currentSort: "default",
     sortMenuOpen: false,
     filterPanelOpen: false,
-    activeFilters: {types: [], yearMin: null, yearMax: null, ratingMin: null, ratingSource: "tmdb", genres: []},
+    activeFilters: {types: [], yearMin: null, yearMax: null, ratingMin: null, ratingSource: "tmdb", genres: [], tags: []},
+    tagsCache: {},
     historyPollInterval: null
   };
 
@@ -52,6 +53,10 @@ window.MW = window.MW || {};
 
   function getLastHistory() {
     return state.historyCache.__last || null;
+  }
+
+  function getTags(item) {
+    return item ? (state.tagsCache[item.id] || []) : [];
   }
 
   function getFilteredItems() {
@@ -87,7 +92,8 @@ window.MW = window.MW || {};
     var hasYearMax = f.yearMax !== null && f.yearMax !== "";
     var hasRating = f.ratingMin !== null && f.ratingMin !== "" && Number(f.ratingMin) > 0;
     var hasGenres = f.genres.length > 0;
-    if (!hasType && !hasYearMin && !hasYearMax && !hasRating && !hasGenres) return items;
+    var hasTags = f.tags && f.tags.length > 0;
+    if (!hasType && !hasYearMin && !hasYearMax && !hasRating && !hasGenres && !hasTags) return items;
     return items.filter(function(item) {
       if (hasType && !f.types.includes(item.type)) return false;
       var y = parseInt(item.year) || 0;
@@ -103,12 +109,24 @@ window.MW = window.MW || {};
         var itemGenres = util.tmdb(item).genres || [];
         if (!f.genres.some(function(g) { return itemGenres.includes(g); })) return false;
       }
+      if (hasTags) {
+        var itemTags = state.tagsCache[item.id] || [];
+        if (!f.tags.every(function(t) { return itemTags.includes(t); })) return false;
+      }
       return true;
     });
   }
 
   function getFilteredSortedItems() {
     return sortItems(applyFilters(getFilteredItems()));
+  }
+
+  function getAllTags() {
+    var set = {};
+    Object.values(state.tagsCache).forEach(function(tags) {
+      tags.forEach(function(t) { if (t) set[t] = true; });
+    });
+    return Object.keys(set).sort();
   }
 
   function getAllGenres() {
@@ -125,7 +143,7 @@ window.MW = window.MW || {};
   }
 
   function clearFilters() {
-    state.activeFilters = {types: [], yearMin: null, yearMax: null, ratingMin: null, ratingSource: "tmdb", genres: []};
+    state.activeFilters = {types: [], yearMin: null, yearMax: null, ratingMin: null, ratingSource: "tmdb", genres: [], tags: []};
     state.filterPanelOpen = false;
   }
 
@@ -231,7 +249,8 @@ window.MW = window.MW || {};
       fetch("/api/history").then(function(r) { return r.json(); }),
       fetch("/api/favorites").then(function(r) { return r.json(); }),
       fetch("/api/players").then(function(r) { return r.json(); }),
-      fetch("/api/config").then(function(r) { return r.json(); })
+      fetch("/api/config").then(function(r) { return r.json(); }),
+      fetch("/api/tags").then(function(r) { return r.json(); })
     ]);
 
     var lib = results[0];
@@ -241,6 +260,7 @@ window.MW = window.MW || {};
     state.favoritesCache = results[3] || [];
     state.players = results[4] || [];
     state.categoriesConfig = normalizeCategoriesConfig(results[5]?.categories);
+    state.tagsCache = results[6] || {};
     initSort();
   }
 
@@ -263,6 +283,8 @@ window.MW = window.MW || {};
   state.SORT_MODES = SORT_MODES;
   state.applyFilters = applyFilters;
   state.getAllGenres = getAllGenres;
+  state.getAllTags = getAllTags;
+  state.getTags = getTags;
   state.hasActiveFilters = hasActiveFilters;
   state.clearFilters = clearFilters;
 

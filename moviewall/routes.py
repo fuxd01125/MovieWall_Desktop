@@ -15,6 +15,7 @@ from moviewall.database import (
     build_library_dict, load_all_ratings, load_all_history, load_all_favorites,
     save_rating, delete_rating, save_history, toggle_favorite,
     save_douban_meta, get_conn, delete_media, delete_season,
+    load_all_tags, add_tag, remove_tag,
 )
 from moviewall.douban import fetch_douban_by_id, set_douban_id_override
 from moviewall.scanner import scan_library
@@ -525,6 +526,25 @@ def register_routes(app):
             return jsonify({"ok": False, "error": "缺少 media_id"}), 400
         action = toggle_favorite(media_id)
         return jsonify({"ok": True, "action": action})
+
+    @app.route("/api/tags", methods=["GET"])
+    def api_get_tags():
+        return jsonify(load_all_tags())
+
+    @app.route("/api/tags", methods=["PUT"])
+    def api_add_tag():
+        data = request.get_json(force=True)
+        media_id = data.get("media_id", "").strip()
+        tag = data.get("tag", "").strip()
+        if not media_id or not tag:
+            return jsonify({"ok": False, "error": "缺少 media_id 或 tag"}), 400
+        add_tag(media_id, tag)
+        return jsonify({"ok": True})
+
+    @app.route("/api/tags/<media_id>/<tag>", methods=["DELETE"])
+    def api_remove_tag(media_id, tag):
+        remove_tag(media_id, tag)
+        return jsonify({"ok": True})
 
     @app.route("/api/person/<person_id>")
     def api_person(person_id):

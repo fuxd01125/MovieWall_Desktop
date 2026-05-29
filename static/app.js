@@ -7,8 +7,8 @@
 
 /* ===== MW Module Aliases ===== */
 const { escapeHtml, escapeJs, titleOf, tmdb, douban, seasonTmdb, seasonDouban, creditsCast, artworkUrl, backdropUrl, showToast, highlightText, renderDualRating } = MW.util;
-const { apiPutRating, apiDeleteRating, apiPutHistory, apiToggleFavorite, openFolder, recordPlay } = MW.api;
-const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, getFilteredItems, getFilteredSortedItems, getContinueItems, normalizeCategoriesConfig, fetchAllData, setSort, getSortLabel, SORT_MODES, getAllGenres, hasActiveFilters, clearFilters } = MW.state;
+const { apiPutRating, apiDeleteRating, apiPutHistory, apiToggleFavorite, openFolder, recordPlay, apiAddTag, apiRemoveTag } = MW.api;
+const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, getFilteredItems, getFilteredSortedItems, getContinueItems, normalizeCategoriesConfig, fetchAllData, setSort, getSortLabel, SORT_MODES, getAllGenres, getAllTags, getTags, hasActiveFilters, clearFilters } = MW.state;
 const { pickHeroItem, renderHero, renderRowSection, renderCardOverlay, renderHomeCard, renderContinueCard, showSkeleton } = MW.cards;
 const { renderGenreTags, renderPrimaryMeta, renderDoubanTags, detailHero, findFirstEpisode, renderSeasonCard, renderInlineEpisodes, renderSeasonDoubanTags, episodeEntry, renderEpisodeCard } = MW.detail;
 const { renderCastSection, renderPersonDetail } = MW.person;
@@ -182,9 +182,18 @@ function renderFilterPanel() {
     }).join('');
     genreHtml = '<div class="fp-section"><div class="fp-label">类型标签</div><div class="fp-row fp-genres">' + chips + '</div></div>';
   }
+  // Tags
+  var allTags = getAllTags();
+  var tagHtml = '';
+  if (allTags.length > 0) {
+    var tagChips = allTags.map(function(t) {
+      return filterChip('tag:' + t, t, f.tags && f.tags.includes(t));
+    }).join('');
+    tagHtml = '<div class="fp-section"><div class="fp-label">标签</div><div class="fp-row fp-genres">' + tagChips + '</div></div>';
+  }
   // Actions
   var actionsHtml = '<div class="fp-actions"><button class="ghost" onclick="event.stopPropagation();clearFiltersAndRender()">清除筛选</button></div>';
-  return '<div class="filter-panel" onclick="event.stopPropagation()">' + typeHtml + yearHtml + ratingHtml + genreHtml + actionsHtml + '</div>';
+  return '<div class="filter-panel" onclick="event.stopPropagation()">' + typeHtml + yearHtml + ratingHtml + genreHtml + tagHtml + actionsHtml + '</div>';
 }
 
 function filterChip(value, label, active) {
@@ -203,6 +212,9 @@ function renderFilterTags() {
   f.genres.forEach(function(g) {
     tags += '<span class="filter-tag">' + escapeHtml(g) + ' <span onclick="toggleFilterValue(\'' + escapeJs(g) + '\')">✕</span></span>';
   });
+  (f.tags || []).forEach(function(t) {
+    tags += '<span class="filter-tag">' + escapeHtml(t) + ' <span onclick="toggleFilterValue(\'tag:' + escapeJs(t) + '\')">✕</span></span>';
+  });
   return '<div class="filter-tags">' + tags + '</div>';
 }
 
@@ -216,6 +228,11 @@ function toggleFilterValue(value) {
   if (value === 'movie' || value === 'show') {
     var idx = f.types.indexOf(value);
     if (idx >= 0) f.types.splice(idx, 1); else f.types.push(value);
+  } else if (value.startsWith('tag:')) {
+    var tag = value.slice(4);
+    if (!f.tags) f.tags = [];
+    var idx3 = f.tags.indexOf(tag);
+    if (idx3 >= 0) f.tags.splice(idx3, 1); else f.tags.push(tag);
   } else {
     var idx2 = f.genres.indexOf(value);
     if (idx2 >= 0) f.genres.splice(idx2, 1); else f.genres.push(value);
@@ -232,6 +249,38 @@ function setFilter(key, value) {
 function clearFiltersAndRender() {
   clearFilters();
   renderRoute(MW.state.currentView);
+}
+
+/* ===== Item Tags ===== */
+
+function renderItemTags(item) {
+  var tags = getTags(item);
+  var chips = tags.map(function(t) {
+    return '<span class="item-tag">' + escapeHtml(t) + ' <span class="item-tag-rm" onclick="removeTagFromItem(\'' + item.id + '\',\'' + escapeJs(t) + '\')">✕</span></span>';
+  }).join('');
+  return '<div class="item-tags-wrap">'
+    + chips
+    + '<span class="item-tag-add"><input class="item-tag-input" placeholder="+ 标签" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addTagToItem(\'' + item.id + '\',this.value);this.value=\'\'}"></span>'
+    + '</div>';
+}
+
+async function addTagToItem(itemId, tag) {
+  tag = tag.trim();
+  if (!tag) return;
+  if (!MW.state.tagsCache[itemId]) MW.state.tagsCache[itemId] = [];
+  if (!MW.state.tagsCache[itemId].includes(tag)) MW.state.tagsCache[itemId].push(tag);
+  renderRoute(MW.state.currentView);
+  await apiAddTag(itemId, tag);
+}
+
+async function removeTagFromItem(itemId, tag) {
+  var tags = MW.state.tagsCache[itemId];
+  if (tags) {
+    var idx = tags.indexOf(tag);
+    if (idx >= 0) tags.splice(idx, 1);
+  }
+  renderRoute(MW.state.currentView);
+  await apiRemoveTag(itemId, tag);
 }
 
 /* ===== Star Rating (user input) ===== */
@@ -567,6 +616,7 @@ function renderMovieDetail(item) {
     + renderDoubanTags(item)
     + (overview ? '<div class="overview">' + escapeHtml(overview) + '</div>' : '')
     + starRatingWidget(item)
+    + renderItemTags(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
     + '<button class="cta-btn secondary' + (isFavorite(item.id) ? ' favorited' : '') + '" onclick="event.stopPropagation();toggleFavorite(\'' + item.id + '\')">' + (isFavorite(item.id) ? '♥' : '♡') + ' 收藏</button>'
@@ -597,6 +647,7 @@ function renderShowDetail(item) {
     + renderDoubanTags(item)
     + (overview ? '<div class="overview">' + escapeHtml(overview) + '</div>' : '')
     + starRatingWidget(item)
+    + renderItemTags(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '')
     + (firstEntry ? '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(firstEp.ep.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '')
@@ -680,6 +731,7 @@ function renderSeasonDetail(show, season) {
     + renderSeasonDoubanTags(show, season)
     + (seasonSynopsis ? '<div class="overview">' + escapeHtml(seasonSynopsis) + '</div>' : '')
     + starRatingWidget(show)
+    + renderItemTags(show)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + show.id + '\')">▶ 继续播放</button>' : '')
     + (firstEp ? '<button class="cta-btn" onclick="playMedia(\'' + escapeJs(firstEp.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '<button class="cta-btn" disabled>无剧集</button>')
