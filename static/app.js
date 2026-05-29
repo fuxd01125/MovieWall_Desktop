@@ -8,7 +8,7 @@
 /* ===== MW Module Aliases ===== */
 const { escapeHtml, escapeJs, titleOf, tmdb, douban, seasonTmdb, seasonDouban, creditsCast, artworkUrl, backdropUrl, showToast, highlightText, renderDualRating } = MW.util;
 const { apiPutRating, apiDeleteRating, apiPutHistory, apiToggleFavorite, openFolder, recordPlay } = MW.api;
-const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, getFilteredItems, getContinueItems, normalizeCategoriesConfig, fetchAllData } = MW.state;
+const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, getFilteredItems, getFilteredSortedItems, getContinueItems, normalizeCategoriesConfig, fetchAllData, setSort, getSortLabel, SORT_MODES } = MW.state;
 const { pickHeroItem, renderHero, renderRowSection, renderCardOverlay, renderHomeCard, renderContinueCard, showSkeleton } = MW.cards;
 const { renderGenreTags, renderPrimaryMeta, renderDoubanTags, detailHero, findFirstEpisode, renderSeasonCard, renderInlineEpisodes, renderSeasonDoubanTags, episodeEntry, renderEpisodeCard } = MW.detail;
 const { renderCastSection, renderPersonDetail } = MW.person;
@@ -96,15 +96,41 @@ function clearUserRating(itemId) {
 
 function renderCategoryTabs() {
   const catStats = MW.state.library.stats?.categories || [];
-  // Only "首页" + dynamic categories from library data — no media_type tabs
   const tabs = [
     {key:"all", label:"首页"},
     ...catStats.map(c => ({key:"cat:" + c.key, label: c.name})),
     {key:"favorites", label:"收藏"}
   ];
-  catTabs.innerHTML = tabs.map(t =>
+  const tabsHtml = tabs.map(t =>
     '<button class="cat-tab' + (MW.state.activeTab === t.key ? ' active' : '') + '" onclick="setTab(\'' + t.key + '\')">' + t.label + '</button>'
   ).join("");
+  const sortLabel = getSortLabel(MW.state.currentSort);
+  const sortActive = MW.state.currentSort !== "default";
+  const sortBtn = '<div class="sort-wrap">'
+    + '<button class="sort-btn cat-tab' + (sortActive ? ' sort-active' : '') + '" onclick="event.stopPropagation();toggleSortMenu()">↕ ' + escapeHtml(sortLabel) + '</button>'
+    + (MW.state.sortMenuOpen ? renderSortDropdown() : '')
+    + '</div>';
+  catTabs.innerHTML = tabsHtml + sortBtn;
+}
+
+function renderSortDropdown() {
+  var html = '<div class="sort-dropdown">';
+  for (var i = 0; i < SORT_MODES.length; i++) {
+    var m = SORT_MODES[i];
+    var cls = m.key === MW.state.currentSort ? ' class="active"' : '';
+    html += '<button' + cls + ' onclick="event.stopPropagation();setSortMode(\'' + m.key + '\')">' + m.label + '</button>';
+  }
+  return html + '</div>';
+}
+
+function toggleSortMenu() {
+  MW.state.sortMenuOpen = !MW.state.sortMenuOpen;
+  renderRoute(MW.state.currentView);
+}
+
+function setSortMode(key) {
+  setSort(key);
+  renderRoute(MW.state.currentView);
 }
 
 function setTab(key) {
@@ -239,7 +265,7 @@ function renderHome() {
     return;
   }
 
-  const items = getFilteredItems();
+  const items = getFilteredSortedItems();
   if (!items.length) {
     const emptyMsg = MW.state.activeTab === "favorites" ? "暂无收藏内容" : "没有匹配的内容。试试其他分类或搜索词。";
     app.innerHTML = '<section class="section"><div class="empty">' + emptyMsg + '</div></section>';
@@ -261,19 +287,20 @@ function renderHome() {
     if (continueItems.length > 0) {
       html += renderRowSection("继续观看", continueItems, renderContinueCard);
     }
-    // Favorites row
-    const favItems = items.filter(i => MW.state.favoritesCache.includes(i.id));
+    // Favorites row (sorted)
+    const favItems = MW.state.sortItems(items.filter(i => MW.state.favoritesCache.includes(i.id)));
     if (favItems.length > 0) {
       html += renderRowSection("收藏", favItems, renderHomeCard, "favorites");
     }
-    // Dynamic category sections — ONLY from library.stats.categories, no media_type sections
+    // Dynamic category sections (sorted within each row)
     for (const cat of catStats) {
-      const catItems = items.filter(i => i.category_key === cat.key);
+      const catItems = MW.state.sortItems(items.filter(i => i.category_key === cat.key));
       if (catItems.length > 0) {
         html += renderRowSection(cat.name, catItems, renderHomeCard, "cat:" + cat.key);
       }
     }
-    if (recent.length > 0) {
+    // Only show "最近添加" row when sort is default (avoid redundancy)
+    if (MW.state.currentSort === "default" && recent.length > 0) {
       html += renderRowSection("最近添加", recent.slice(0, 15), renderHomeCard);
     }
 
@@ -390,6 +417,7 @@ function renderMovieDetail(item) {
     + starRatingWidget(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
+    + '<button class="cta-btn secondary' + (isFavorite(item.id) ? ' favorited' : '') + '" onclick="event.stopPropagation();toggleFavorite(\'' + item.id + '\')">' + (isFavorite(item.id) ? '♥' : '♡') + ' 收藏</button>'
     + more
     + '</div>';
 
@@ -628,6 +656,10 @@ document.addEventListener("click", (e) => {
   }
   if (MW.state.seasonMoreOpen && !e.target.closest(".season-more-wrap") && !e.target.closest(".season-more-dropdown")) {
     MW.state.seasonMoreOpen = null;
+    renderRoute(MW.state.currentView);
+  }
+  if (MW.state.sortMenuOpen && !e.target.closest(".sort-wrap")) {
+    MW.state.sortMenuOpen = false;
     renderRoute(MW.state.currentView);
   }
 });
