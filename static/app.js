@@ -395,14 +395,27 @@ function moreMenuHtml(item, extraActions) {
 
 function detailMenuActions(item, season) {
   var dd = douban(item);
+  var t = tmdb(item);
   var folder = season ? (season.folder || item.folder) : item.folder;
   var deleteLabel = season ? '删除此季' : '删除此影视剧';
   var deleteTitle = season ? (titleOf(item) + ' ' + season.title) : titleOf(item);
   var deleteScope = season ? 'season' : 'show';
   var seasonNum = season ? season.season_number : '';
+  // TMDB URL
+  var tmdbUrl = '';
+  if (t.tmdb_id) {
+    if (season) {
+      tmdbUrl = 'https://www.themoviedb.org/tv/' + t.tmdb_id + '/season/' + season.season_number;
+    } else if (item.type === 'movie') {
+      tmdbUrl = 'https://www.themoviedb.org/movie/' + t.tmdb_id;
+    } else {
+      tmdbUrl = 'https://www.themoviedb.org/tv/' + t.tmdb_id;
+    }
+  }
   return '<button onclick="openFolder(\'' + escapeJs(folder) + '\')">打开文件夹</button>'
     + '<button onclick="updateSingleItem(\'' + item.id + '\')">更新元数据</button>'
     + '<button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(dd.douban_id || "") + '\')">' + (dd.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>'
+    + (tmdbUrl ? '<button onclick="window.open(\'' + tmdbUrl + '\')">在 TMDB 查看</button>' : '')
     + '<button class="danger-action" onclick="confirmDeleteMedia(\'' + item.id + '\',\'' + escapeJs(deleteTitle) + '\',\'' + deleteScope + '\',' + seasonNum + ')">' + deleteLabel + '</button>';
 }
 

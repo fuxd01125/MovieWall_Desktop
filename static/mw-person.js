@@ -66,6 +66,7 @@ window.MW = window.MW || {};
       + (data.place_of_birth ? '<div class="person-meta"><span class="meta-label">出生地</span> ' + util.escapeHtml(data.place_of_birth) + '</div>' : '')
       + aka
       + (data.biography ? '<div class="person-bio">' + util.escapeHtml(data.biography) + '</div>' : '')
+      + (data.id ? '<div class="person-actions"><button class="cta-btn secondary" onclick="window.open(\'https://www.themoviedb.org/person/' + data.id + '\')">在 TMDB 查看</button></div>' : '')
       + '</div></div>';
 
     var works = data.works || [];
