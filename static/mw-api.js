@@ -39,6 +39,14 @@ window.MW = window.MW || {};
     apiPutHistory(item);
   }
 
+  async function apiAddTag(mediaId, tag) {
+    await fetch("/api/tags", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({media_id:mediaId, tag:tag})});
+  }
+
+  async function apiRemoveTag(mediaId, tag) {
+    await fetch("/api/tags/" + encodeURIComponent(mediaId) + "/" + encodeURIComponent(tag), {method:"DELETE"});
+  }
+
   /* Expose on MW.api */
   MW.api = {
     apiPutRating: apiPutRating,
@@ -46,7 +54,9 @@ window.MW = window.MW || {};
     apiPutHistory: apiPutHistory,
     apiToggleFavorite: apiToggleFavorite,
     openFolder: openFolder,
-    recordPlay: recordPlay
+    recordPlay: recordPlay,
+    apiAddTag: apiAddTag,
+    apiRemoveTag: apiRemoveTag
   };
 
   /* Expose on window for inline onclick handlers */

@@ -7,8 +7,8 @@
 
 /* ===== MW Module Aliases ===== */
 const { escapeHtml, escapeJs, titleOf, tmdb, douban, seasonTmdb, seasonDouban, creditsCast, artworkUrl, backdropUrl, showToast, highlightText, renderDualRating } = MW.util;
-const { apiPutRating, apiDeleteRating, apiPutHistory, apiToggleFavorite, openFolder, recordPlay } = MW.api;
-const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, getFilteredItems, getFilteredSortedItems, getContinueItems, normalizeCategoriesConfig, fetchAllData, setSort, getSortLabel, SORT_MODES } = MW.state;
+const { apiPutRating, apiDeleteRating, apiPutHistory, apiToggleFavorite, openFolder, recordPlay, apiAddTag, apiRemoveTag } = MW.api;
+const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, getFilteredItems, getFilteredSortedItems, getContinueItems, normalizeCategoriesConfig, fetchAllData, setSort, getSortLabel, SORT_MODES, getAllGenres, getAllTags, getTags, hasActiveFilters, clearFilters } = MW.state;
 const { pickHeroItem, renderHero, renderRowSection, renderCardOverlay, renderHomeCard, renderContinueCard, showSkeleton } = MW.cards;
 const { renderGenreTags, renderPrimaryMeta, renderDoubanTags, detailHero, findFirstEpisode, renderSeasonCard, renderInlineEpisodes, renderSeasonDoubanTags, episodeEntry, renderEpisodeCard } = MW.detail;
 const { renderCastSection, renderPersonDetail } = MW.person;
@@ -110,7 +110,7 @@ function renderCategoryTabs() {
     + '<button class="sort-btn cat-tab' + (sortActive ? ' sort-active' : '') + '" onclick="event.stopPropagation();toggleSortMenu()">↕ ' + escapeHtml(sortLabel) + '</button>'
     + (MW.state.sortMenuOpen ? renderSortDropdown() : '')
     + '</div>';
-  catTabs.innerHTML = tabsHtml + sortBtn;
+  catTabs.innerHTML = tabsHtml + renderFilterBar() + sortBtn;
 }
 
 function renderSortDropdown() {
@@ -139,6 +139,148 @@ function setTab(key) {
   MW.state.activeTab = key;
   MW.state.navStack = [];
   renderHome();
+}
+
+/* ===== Filter Bar ===== */
+
+function renderFilterBar() {
+  var f = MW.state.activeFilters;
+  var hasFilters = hasActiveFilters();
+  var btn = '<button class="filter-btn cat-tab' + (hasFilters ? ' filter-active' : '') + '" onclick="event.stopPropagation();toggleFilterPanel()">筛选' + (hasFilters ? ' ●' : '') + '</button>';
+  var panel = MW.state.filterPanelOpen ? renderFilterPanel() : '';
+  var tags = hasFilters ? renderFilterTags() : '';
+  return '<div class="filter-wrap">' + btn + panel + '</div>' + tags;
+}
+
+function renderFilterPanel() {
+  var f = MW.state.activeFilters;
+  // Type
+  var typeHtml = '<div class="fp-section"><div class="fp-label">类型</div><div class="fp-row">'
+    + filterChip("movie", "电影", f.types.includes("movie"))
+    + filterChip("show", "剧集", f.types.includes("show"))
+    + '</div></div>';
+  // Year
+  var yearHtml = '<div class="fp-section"><div class="fp-label">年份</div><div class="fp-row fp-range">'
+    + '<input type="number" class="fp-input" placeholder="起始" value="' + (f.yearMin || '') + '" onchange="setFilter(\'yearMin\',this.value)">'
+    + '<span class="fp-sep">~</span>'
+    + '<input type="number" class="fp-input" placeholder="结束" value="' + (f.yearMax || '') + '" onchange="setFilter(\'yearMax\',this.value)">'
+    + '</div></div>';
+  // Rating
+  var ratingHtml = '<div class="fp-section"><div class="fp-label">最低评分</div><div class="fp-row fp-range">'
+    + '<input type="number" class="fp-input fp-input-sm" placeholder="0" min="0" max="10" step="0.5" value="' + (f.ratingMin || '') + '" onchange="setFilter(\'ratingMin\',this.value)">'
+    + '<select class="fp-select" onchange="setFilter(\'ratingSource\',this.value)">'
+    + '<option value="tmdb"' + (f.ratingSource === 'tmdb' ? ' selected' : '') + '>TMDB</option>'
+    + '<option value="douban"' + (f.ratingSource === 'douban' ? ' selected' : '') + '>豆瓣</option>'
+    + '</select>'
+    + '</div></div>';
+  // Genres
+  var allGenres = getAllGenres();
+  var genreHtml = '';
+  if (allGenres.length > 0) {
+    var chips = allGenres.map(function(g) {
+      return filterChip(g, g, f.genres.includes(g));
+    }).join('');
+    genreHtml = '<div class="fp-section"><div class="fp-label">类型标签</div><div class="fp-row fp-genres">' + chips + '</div></div>';
+  }
+  // Tags
+  var allTags = getAllTags();
+  var tagHtml = '';
+  if (allTags.length > 0) {
+    var tagChips = allTags.map(function(t) {
+      return filterChip('tag:' + t, t, f.tags && f.tags.includes(t));
+    }).join('');
+    tagHtml = '<div class="fp-section"><div class="fp-label">标签</div><div class="fp-row fp-genres">' + tagChips + '</div></div>';
+  }
+  // Actions
+  var actionsHtml = '<div class="fp-actions"><button class="ghost" onclick="event.stopPropagation();clearFiltersAndRender()">清除筛选</button></div>';
+  return '<div class="filter-panel" onclick="event.stopPropagation()">' + typeHtml + yearHtml + ratingHtml + genreHtml + tagHtml + actionsHtml + '</div>';
+}
+
+function filterChip(value, label, active) {
+  return '<button class="fp-chip' + (active ? ' active' : '') + '" onclick="event.stopPropagation();toggleFilterValue(\'' + escapeJs(value) + '\')">' + escapeHtml(label) + '</button>';
+}
+
+function renderFilterTags() {
+  var f = MW.state.activeFilters;
+  var tags = '';
+  f.types.forEach(function(t) {
+    tags += '<span class="filter-tag">' + (t === 'movie' ? '电影' : '剧集') + ' <span onclick="toggleFilterValue(\'' + t + '\')">✕</span></span>';
+  });
+  if (f.yearMin) tags += '<span class="filter-tag">' + f.yearMin + '年后 <span onclick="setFilter(\'yearMin\',\'\')">✕</span></span>';
+  if (f.yearMax) tags += '<span class="filter-tag">' + f.yearMax + '年前 <span onclick="setFilter(\'yearMax\',\'\')">✕</span></span>';
+  if (f.ratingMin) tags += '<span class="filter-tag">' + (f.ratingSource === 'douban' ? '豆瓣' : 'TMDB') + '≥' + f.ratingMin + ' <span onclick="setFilter(\'ratingMin\',\'\')">✕</span></span>';
+  f.genres.forEach(function(g) {
+    tags += '<span class="filter-tag">' + escapeHtml(g) + ' <span onclick="toggleFilterValue(\'' + escapeJs(g) + '\')">✕</span></span>';
+  });
+  (f.tags || []).forEach(function(t) {
+    tags += '<span class="filter-tag">' + escapeHtml(t) + ' <span onclick="toggleFilterValue(\'tag:' + escapeJs(t) + '\')">✕</span></span>';
+  });
+  return '<div class="filter-tags">' + tags + '</div>';
+}
+
+function toggleFilterPanel() {
+  MW.state.filterPanelOpen = !MW.state.filterPanelOpen;
+  renderRoute(MW.state.currentView);
+}
+
+function toggleFilterValue(value) {
+  var f = MW.state.activeFilters;
+  if (value === 'movie' || value === 'show') {
+    var idx = f.types.indexOf(value);
+    if (idx >= 0) f.types.splice(idx, 1); else f.types.push(value);
+  } else if (value.startsWith('tag:')) {
+    var tag = value.slice(4);
+    if (!f.tags) f.tags = [];
+    var idx3 = f.tags.indexOf(tag);
+    if (idx3 >= 0) f.tags.splice(idx3, 1); else f.tags.push(tag);
+  } else {
+    var idx2 = f.genres.indexOf(value);
+    if (idx2 >= 0) f.genres.splice(idx2, 1); else f.genres.push(value);
+  }
+  renderRoute(MW.state.currentView);
+}
+
+function setFilter(key, value) {
+  if (value === '' || value === null) value = null;
+  MW.state.activeFilters[key] = value;
+  renderRoute(MW.state.currentView);
+}
+
+function clearFiltersAndRender() {
+  clearFilters();
+  renderRoute(MW.state.currentView);
+}
+
+/* ===== Item Tags ===== */
+
+function renderItemTags(item) {
+  var tags = getTags(item);
+  var chips = tags.map(function(t) {
+    return '<span class="item-tag">' + escapeHtml(t) + ' <span class="item-tag-rm" onclick="removeTagFromItem(\'' + item.id + '\',\'' + escapeJs(t) + '\')">✕</span></span>';
+  }).join('');
+  return '<div class="item-tags-wrap">'
+    + chips
+    + '<span class="item-tag-add"><input class="item-tag-input" placeholder="+ 标签" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addTagToItem(\'' + item.id + '\',this.value);this.value=\'\'}"></span>'
+    + '</div>';
+}
+
+async function addTagToItem(itemId, tag) {
+  tag = tag.trim();
+  if (!tag) return;
+  if (!MW.state.tagsCache[itemId]) MW.state.tagsCache[itemId] = [];
+  if (!MW.state.tagsCache[itemId].includes(tag)) MW.state.tagsCache[itemId].push(tag);
+  renderRoute(MW.state.currentView);
+  await apiAddTag(itemId, tag);
+}
+
+async function removeTagFromItem(itemId, tag) {
+  var tags = MW.state.tagsCache[itemId];
+  if (tags) {
+    var idx = tags.indexOf(tag);
+    if (idx >= 0) tags.splice(idx, 1);
+  }
+  renderRoute(MW.state.currentView);
+  await apiRemoveTag(itemId, tag);
 }
 
 /* ===== Star Rating (user input) ===== */
@@ -395,14 +537,27 @@ function moreMenuHtml(item, extraActions) {
 
 function detailMenuActions(item, season) {
   var dd = douban(item);
+  var t = tmdb(item);
   var folder = season ? (season.folder || item.folder) : item.folder;
   var deleteLabel = season ? '删除此季' : '删除此影视剧';
   var deleteTitle = season ? (titleOf(item) + ' ' + season.title) : titleOf(item);
   var deleteScope = season ? 'season' : 'show';
   var seasonNum = season ? season.season_number : '';
+  // TMDB URL
+  var tmdbUrl = '';
+  if (t.tmdb_id) {
+    if (season) {
+      tmdbUrl = 'https://www.themoviedb.org/tv/' + t.tmdb_id + '/season/' + season.season_number;
+    } else if (item.type === 'movie') {
+      tmdbUrl = 'https://www.themoviedb.org/movie/' + t.tmdb_id;
+    } else {
+      tmdbUrl = 'https://www.themoviedb.org/tv/' + t.tmdb_id;
+    }
+  }
   return '<button onclick="openFolder(\'' + escapeJs(folder) + '\')">打开文件夹</button>'
     + '<button onclick="updateSingleItem(\'' + item.id + '\')">更新元数据</button>'
     + '<button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(dd.douban_id || "") + '\')">' + (dd.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>'
+    + (tmdbUrl ? '<button onclick="window.open(\'' + tmdbUrl + '\')">在 TMDB 查看</button>' : '')
     + '<button class="danger-action" onclick="confirmDeleteMedia(\'' + item.id + '\',\'' + escapeJs(deleteTitle) + '\',\'' + deleteScope + '\',' + seasonNum + ')">' + deleteLabel + '</button>';
 }
 
@@ -461,6 +616,7 @@ function renderMovieDetail(item) {
     + renderDoubanTags(item)
     + (overview ? '<div class="overview">' + escapeHtml(overview) + '</div>' : '')
     + starRatingWidget(item)
+    + renderItemTags(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(item.path) + '\',' + entry + ')">▶ 播放</button>')
     + '<button class="cta-btn secondary' + (isFavorite(item.id) ? ' favorited' : '') + '" onclick="event.stopPropagation();toggleFavorite(\'' + item.id + '\')">' + (isFavorite(item.id) ? '♥' : '♡') + ' 收藏</button>'
@@ -491,6 +647,7 @@ function renderShowDetail(item) {
     + renderDoubanTags(item)
     + (overview ? '<div class="overview">' + escapeHtml(overview) + '</div>' : '')
     + starRatingWidget(item)
+    + renderItemTags(item)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + item.id + '\')">▶ 继续播放</button>' : '')
     + (firstEntry ? '<button class="cta-btn" onclick="event.stopPropagation();playMedia(\'' + escapeJs(firstEp.ep.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '')
@@ -574,6 +731,7 @@ function renderSeasonDetail(show, season) {
     + renderSeasonDoubanTags(show, season)
     + (seasonSynopsis ? '<div class="overview">' + escapeHtml(seasonSynopsis) + '</div>' : '')
     + starRatingWidget(show)
+    + renderItemTags(show)
     + '<div class="detail-actions">'
     + (hist ? '<button class="cta-btn" onclick="event.stopPropagation();playItemHistory(\'' + show.id + '\')">▶ 继续播放</button>' : '')
     + (firstEp ? '<button class="cta-btn" onclick="playMedia(\'' + escapeJs(firstEp.path) + '\',' + firstEntry + ')">▶ 播放第1集</button>' : '<button class="cta-btn" disabled>无剧集</button>')
@@ -698,6 +856,10 @@ document.addEventListener("click", (e) => {
   }
   if (MW.state.sortMenuOpen && !e.target.closest(".sort-wrap")) {
     MW.state.sortMenuOpen = false;
+    renderRoute(MW.state.currentView);
+  }
+  if (MW.state.filterPanelOpen && !e.target.closest(".filter-wrap")) {
+    MW.state.filterPanelOpen = false;
     renderRoute(MW.state.currentView);
   }
 });

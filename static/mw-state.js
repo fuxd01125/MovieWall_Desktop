@@ -27,6 +27,9 @@ window.MW = window.MW || {};
     activeTab: "all",
     currentSort: "default",
     sortMenuOpen: false,
+    filterPanelOpen: false,
+    activeFilters: {types: [], yearMin: null, yearMax: null, ratingMin: null, ratingSource: "tmdb", genres: [], tags: []},
+    tagsCache: {},
     historyPollInterval: null
   };
 
@@ -50,6 +53,10 @@ window.MW = window.MW || {};
 
   function getLastHistory() {
     return state.historyCache.__last || null;
+  }
+
+  function getTags(item) {
+    return item ? (state.tagsCache[item.id] || []) : [];
   }
 
   function getFilteredItems() {
@@ -78,8 +85,66 @@ window.MW = window.MW || {};
     });
   }
 
+  function applyFilters(items) {
+    var f = state.activeFilters;
+    var hasType = f.types.length > 0;
+    var hasYearMin = f.yearMin !== null && f.yearMin !== "";
+    var hasYearMax = f.yearMax !== null && f.yearMax !== "";
+    var hasRating = f.ratingMin !== null && f.ratingMin !== "" && Number(f.ratingMin) > 0;
+    var hasGenres = f.genres.length > 0;
+    var hasTags = f.tags && f.tags.length > 0;
+    if (!hasType && !hasYearMin && !hasYearMax && !hasRating && !hasGenres && !hasTags) return items;
+    return items.filter(function(item) {
+      if (hasType && !f.types.includes(item.type)) return false;
+      var y = parseInt(item.year) || 0;
+      if (hasYearMin && y < Number(f.yearMin)) return false;
+      if (hasYearMax && y > Number(f.yearMax)) return false;
+      if (hasRating) {
+        var r = f.ratingSource === "douban"
+          ? Number(util.douban(item).rating) || 0
+          : Number(util.tmdb(item).rating) || 0;
+        if (r < Number(f.ratingMin)) return false;
+      }
+      if (hasGenres) {
+        var itemGenres = util.tmdb(item).genres || [];
+        if (!f.genres.some(function(g) { return itemGenres.includes(g); })) return false;
+      }
+      if (hasTags) {
+        var itemTags = state.tagsCache[item.id] || [];
+        if (!f.tags.every(function(t) { return itemTags.includes(t); })) return false;
+      }
+      return true;
+    });
+  }
+
   function getFilteredSortedItems() {
-    return sortItems(getFilteredItems());
+    return sortItems(applyFilters(getFilteredItems()));
+  }
+
+  function getAllTags() {
+    var set = {};
+    Object.values(state.tagsCache).forEach(function(tags) {
+      tags.forEach(function(t) { if (t) set[t] = true; });
+    });
+    return Object.keys(set).sort();
+  }
+
+  function getAllGenres() {
+    var set = {};
+    state.library.items.forEach(function(item) {
+      (util.tmdb(item).genres || []).forEach(function(g) { if (g) set[g] = true; });
+    });
+    return Object.keys(set).sort();
+  }
+
+  function hasActiveFilters() {
+    var f = state.activeFilters;
+    return f.types.length > 0 || f.yearMin || f.yearMax || f.ratingMin || f.genres.length > 0;
+  }
+
+  function clearFilters() {
+    state.activeFilters = {types: [], yearMin: null, yearMax: null, ratingMin: null, ratingSource: "tmdb", genres: [], tags: []};
+    state.filterPanelOpen = false;
   }
 
   function getContinueItems() {
@@ -184,7 +249,8 @@ window.MW = window.MW || {};
       fetch("/api/history").then(function(r) { return r.json(); }),
       fetch("/api/favorites").then(function(r) { return r.json(); }),
       fetch("/api/players").then(function(r) { return r.json(); }),
-      fetch("/api/config").then(function(r) { return r.json(); })
+      fetch("/api/config").then(function(r) { return r.json(); }),
+      fetch("/api/tags").then(function(r) { return r.json(); })
     ]);
 
     var lib = results[0];
@@ -194,6 +260,7 @@ window.MW = window.MW || {};
     state.favoritesCache = results[3] || [];
     state.players = results[4] || [];
     state.categoriesConfig = normalizeCategoriesConfig(results[5]?.categories);
+    state.tagsCache = results[6] || {};
     initSort();
   }
 
@@ -214,6 +281,12 @@ window.MW = window.MW || {};
   state.sortItems = sortItems;
   state.getSortLabel = getSortLabel;
   state.SORT_MODES = SORT_MODES;
+  state.applyFilters = applyFilters;
+  state.getAllGenres = getAllGenres;
+  state.getAllTags = getAllTags;
+  state.getTags = getTags;
+  state.hasActiveFilters = hasActiveFilters;
+  state.clearFilters = clearFilters;
 
   MW.state = state;
 

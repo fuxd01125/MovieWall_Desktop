@@ -198,6 +198,12 @@ CREATE TABLE IF NOT EXISTS favorites (
     favorited_at REAL
 );
 
+CREATE TABLE IF NOT EXISTS tags (
+    media_id TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    tag      TEXT NOT NULL,
+    PRIMARY KEY (media_id, tag)
+);
+
 CREATE INDEX IF NOT EXISTS idx_seasons_show   ON seasons(show_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_show  ON episodes(show_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_season ON episodes(season_id);
@@ -568,6 +574,7 @@ def delete_media(media_id):
         conn.execute("DELETE FROM history WHERE media_id=?", (media_id,))
         conn.execute("DELETE FROM favorites WHERE media_id=?", (media_id,))
         conn.execute("DELETE FROM ratings WHERE media_id=?", (media_id,))
+        conn.execute("DELETE FROM tags WHERE media_id=?", (media_id,))
         conn.execute("DELETE FROM media WHERE id=?", (media_id,))
         conn.commit()
     except Exception:
@@ -1185,6 +1192,47 @@ def toggle_favorite(media_id):
                          (media_id, time.time()))
             conn.commit()
             return "added"
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def load_all_tags():
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT media_id, tag FROM tags").fetchall()
+    except Exception:
+        raise
+    finally:
+        conn.close()
+    result = {}
+    for r in rows:
+        mid = r["media_id"]
+        if mid not in result:
+            result[mid] = []
+        result[mid].append(r["tag"])
+    return result
+
+
+def add_tag(media_id, tag):
+    conn = get_conn()
+    try:
+        conn.execute("INSERT OR IGNORE INTO tags (media_id, tag) VALUES (?, ?)", (media_id, tag))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def remove_tag(media_id, tag):
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM tags WHERE media_id=? AND tag=?", (media_id, tag))
+        conn.commit()
     except Exception:
         conn.rollback()
         raise
