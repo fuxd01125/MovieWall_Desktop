@@ -393,6 +393,53 @@ function moreMenuHtml(item, extraActions) {
   return '<div class="more-wrap"><button class="ghost more-btn" onclick="toggleMore(\'' + id + '\',event)">···</button>' + (open ? '<div class="more-dropdown" onclick="event.stopPropagation()">' + actions + '</div>' : '') + '</div>';
 }
 
+function detailMenuActions(item, season) {
+  var dd = douban(item);
+  var folder = season ? (season.folder || item.folder) : item.folder;
+  var deleteLabel = season ? '删除此季' : '删除此影视剧';
+  var deleteTitle = season ? (titleOf(item) + ' ' + season.title) : titleOf(item);
+  var deleteScope = season ? 'season' : 'show';
+  var seasonNum = season ? season.season_number : '';
+  return '<button onclick="openFolder(\'' + escapeJs(folder) + '\')">打开文件夹</button>'
+    + '<button onclick="updateSingleItem(\'' + item.id + '\')">更新元数据</button>'
+    + '<button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(dd.douban_id || "") + '\')">' + (dd.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>'
+    + '<button class="danger-action" onclick="confirmDeleteMedia(\'' + item.id + '\',\'' + escapeJs(deleteTitle) + '\',\'' + deleteScope + '\',' + seasonNum + ')">' + deleteLabel + '</button>';
+}
+
+function confirmDeleteMedia(mediaId, title, scope, seasonNumber) {
+  scope = scope || 'show';
+  var msg = scope === 'season'
+    ? '确认删除《' + title + '》？\n\n此操作只会删除该季目录，且不可恢复。'
+    : '确认删除《' + title + '》？\n\n此操作会删除本地文件，且不可恢复。';
+  if (!confirm(msg)) return;
+  deleteMedia(mediaId, scope, seasonNumber);
+}
+
+async function deleteMedia(mediaId, scope, seasonNumber) {
+  showToast("删除中...");
+  MW.state.moreMenuOpen = null;
+  try {
+    var body = {media_id: mediaId, scope: scope || 'show'};
+    if (scope === 'season' && seasonNumber !== undefined) body.season_number = seasonNumber;
+    var res = await fetch("/api/delete_media", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    var data = await res.json();
+    if (data.ok) {
+      showToast("已删除");
+      var libRes = await fetch("/api/library");
+      MW.state.library = await libRes.json();
+      goHome();
+    } else {
+      showToast("删除失败: " + (data.error || "未知错误"), 4000);
+    }
+  } catch(e) {
+    showToast("删除失败: 网络错误", 4000);
+  }
+}
+
 /* ===== Detail Page ===== */
 
 function renderMovieDetail(item) {
@@ -404,9 +451,8 @@ function renderMovieDetail(item) {
   const origTitle = meta.original_title && meta.original_title !== titleOf(item) ? meta.original_title : "";
   const hist = getItemHistory(item);
   const entry = "{media_id:'" + item.id + "',type:'movie',path:'" + escapeJs(item.path) + "',title:'" + escapeJs(titleOf(item)) + "',show_title:'" + escapeJs(titleOf(item)) + "',label:'电影',short_label:'电影'}";
-  const d = douban(item);
   const cast = (item.metadata?.credits?.cast || []).filter(c => c.person?.id);
-  const more = moreMenuHtml(item, '<button onclick="openFolder(\'' + escapeJs(item.folder) + '\')">打开文件夹</button><button onclick="updateSingleItem(\'' + item.id + '\')">更新此项目</button><button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(d.douban_id || "") + '\')">' + (d.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>');
+  const more = moreMenuHtml(item, detailMenuActions(item));
 
   const body = '<h1>' + escapeHtml(titleOf(item)) + '</h1>'
     + (origTitle ? '<div class="detail-subtitle">' + escapeHtml(origTitle) + '</div>' : '')
@@ -433,11 +479,7 @@ function renderShowDetail(item) {
   const overview = meta.overview;
   const origTitle = meta.original_title && meta.original_title !== titleOf(item) ? meta.original_title : "";
   const hist = getItemHistory(item);
-  const dd = douban(item);
-  const moreActions = '<button onclick="openFolder(\'' + escapeJs(item.folder) + '\')">打开文件夹</button>'
-    + '<button onclick="updateSingleItem(\'' + item.id + '\')">更新此项目</button>'
-    + '<button onclick="openDoubanSetting(\'' + item.id + '\',\'' + escapeJs(dd.douban_id || "") + '\')">' + (dd.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>';
-  const more = moreMenuHtml(item, moreActions);
+  const more = moreMenuHtml(item, detailMenuActions(item));
   const firstEp = findFirstEpisode(item);
   const firstEntry = firstEp ? episodeEntry(item, firstEp.season, firstEp.ep, firstEp.season.title + " · " + firstEp.ep.title) : "";
   const cast = (item.metadata?.credits?.cast || []).filter(c => c.person?.id);
@@ -523,11 +565,7 @@ function renderSeasonDetail(show, season) {
   metaParts.push('<span class="year">' + (season.episode_count || 0) + ' 集</span>');
 
   const hist = getItemHistory(show);
-  const dd = douban(show);
-  const moreActions = '<button onclick="openFolder(\'' + escapeJs(show.folder) + '\')">打开文件夹</button>'
-    + '<button onclick="updateSingleItem(\'' + show.id + '\')">更新此项目</button>'
-    + '<button onclick="openDoubanSetting(\'' + show.id + '\',\'' + escapeJs(dd.douban_id || "") + '\')">' + (dd.douban_id ? '修改豆瓣ID' : '设置豆瓣ID') + '</button>';
-  const more = moreMenuHtml(show, moreActions);
+  const more = moreMenuHtml(show, detailMenuActions(show, season));
 
   const body = '<h1>' + escapeHtml(season.title) + '</h1>'
     + (origTitle ? '<div class="detail-subtitle">' + escapeHtml(origTitle) + '</div>' : '')

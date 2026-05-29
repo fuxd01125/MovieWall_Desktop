@@ -29,7 +29,7 @@ window.MW = window.MW || {};
   }
 
   async function openFolder(path) {
-    await fetch("/api/open_folder", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({path:path})});
+    await fetch("/api/open_folder", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({folder:path})});
   }
 
   function recordPlay(entry) {

@@ -1890,6 +1890,14 @@ main {
   box-shadow: none;
 }
 
+.more-dropdown .danger-action {
+  color: var(--brand);
+}
+
+.more-dropdown .danger-action:hover {
+  background: rgba(229,9,20,.12);
+}
+
 /* =================================================================
    BACK BUTTON (detail page)
    ================================================================= */

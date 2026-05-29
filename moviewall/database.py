@@ -577,6 +577,30 @@ def delete_media(media_id):
         conn.close()
 
 
+def delete_season(show_id, season_number):
+    """Delete only one season and its episodes/metadata. Preserves the parent show and other seasons."""
+    conn = get_conn()
+    try:
+        # Get season_id for this season
+        row = conn.execute("SELECT id FROM seasons WHERE show_id=? AND season_number=?", (show_id, season_number)).fetchone()
+        if not row:
+            return
+        season_id = row["id"]
+
+        # Delete season-scoped records
+        conn.execute("DELETE FROM episodes WHERE season_id=?", (season_id,))
+        conn.execute("DELETE FROM metadata_tmdb_seasons WHERE season_id=?", (season_id,))
+        conn.execute("DELETE FROM metadata_douban_seasons WHERE season_id=?", (season_id,))
+        conn.execute("DELETE FROM history WHERE media_id=? AND season_number=?", (show_id, season_number))
+        conn.execute("DELETE FROM seasons WHERE id=?", (season_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 _DELETE_TABLES = (
     "credits", "metadata_tmdb_episodes", "metadata_tmdb_seasons",
     "episodes", "seasons", "metadata_douban_seasons",

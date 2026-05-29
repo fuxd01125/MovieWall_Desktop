@@ -1,6 +1,7 @@
 """Flask routes — API endpoints backed by SQLite database."""
 import json
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -13,7 +14,7 @@ from moviewall.log import log
 from moviewall.database import (
     build_library_dict, load_all_ratings, load_all_history, load_all_favorites,
     save_rating, delete_rating, save_history, toggle_favorite,
-    save_douban_meta, get_conn,
+    save_douban_meta, get_conn, delete_media, delete_season,
 )
 from moviewall.douban import fetch_douban_by_id, set_douban_id_override
 from moviewall.scanner import scan_library
@@ -309,6 +310,94 @@ def register_routes(app):
             subprocess.Popen(["explorer", str(Path(folder).resolve())])
             return jsonify({"ok": True})
         return jsonify({"ok": False, "error": "仅支持 Windows Explorer"}), 400
+
+    @app.route("/api/delete_media", methods=["POST"])
+    def api_delete_media():
+        data = request.get_json(force=True)
+        media_id = data.get("media_id", "").strip()
+        scope = data.get("scope", "show")  # "show" or "season"
+        season_number = data.get("season_number")
+
+        if not media_id:
+            return jsonify({"ok": False, "error": "缺少 media_id"}), 400
+
+        item = find_media_by_id(media_id)
+        if not item:
+            return jsonify({"ok": False, "error": "媒体不存在"}), 404
+
+        cfg = load_config()
+        library_root = cfg.get("library_root", "")
+
+        if scope == "season" and season_number is not None:
+            # Season-scoped deletion: find the season folder
+            season_folder = None
+            for s in item.get("seasons", []):
+                if s.get("season_number") == season_number:
+                    season_folder = s.get("folder", "")
+                    break
+
+            if not season_folder:
+                return jsonify({"ok": False, "error": "未找到该季的目录路径"}), 400
+
+            # Safety checks
+            if library_root:
+                root_resolved = Path(library_root).resolve()
+                target_resolved = Path(season_folder).resolve()
+                if not target_resolved.is_relative_to(root_resolved):
+                    return jsonify({"ok": False, "error": "路径不在媒体库范围内"}), 403
+                if target_resolved == root_resolved:
+                    return jsonify({"ok": False, "error": "不能删除媒体库根目录"}), 403
+
+            # Delete season folder from disk
+            try:
+                target = Path(season_folder).resolve()
+                if target.exists():
+                    shutil.rmtree(str(target))
+                    log.info("DELETE SEASON: removed folder %s", target)
+            except Exception as e:
+                return jsonify({"ok": False, "error": "删除文件失败: " + str(e)}), 500
+
+            # Clean up season-scoped DB records
+            delete_season(media_id, season_number)
+            log.info("DELETE SEASON: cleaned DB for show=%s season=%s", media_id, season_number)
+
+            return jsonify({"ok": True, "scope": "season"})
+        else:
+            # Full show/movie deletion
+            folder = item.get("folder", "")
+            if not folder:
+                return jsonify({"ok": False, "error": "无文件夹路径"}), 400
+
+            # Safety checks
+            if library_root:
+                root_resolved = Path(library_root).resolve()
+                target_resolved = Path(folder).resolve()
+                if not target_resolved.is_relative_to(root_resolved):
+                    return jsonify({"ok": False, "error": "路径不在媒体库范围内"}), 403
+                if target_resolved == root_resolved:
+                    return jsonify({"ok": False, "error": "不能删除媒体库根目录"}), 403
+
+            # Delete folder from disk
+            try:
+                target = Path(folder).resolve()
+                if target.exists():
+                    shutil.rmtree(str(target))
+                    log.info("DELETE MEDIA: removed folder %s", target)
+            except Exception as e:
+                return jsonify({"ok": False, "error": "删除文件失败: " + str(e)}), 500
+
+            # Clean up database
+            delete_media(media_id)
+            log.info("DELETE MEDIA: cleaned DB for %s", media_id)
+
+            # Clean up douban_id_overrides
+            overrides = cfg.get("douban_id_overrides", {})
+            if media_id in overrides:
+                del overrides[media_id]
+                cfg["douban_id_overrides"] = overrides
+                write_json(CONFIG_FILE, cfg)
+
+            return jsonify({"ok": True, "scope": "show"})
 
     @app.route("/api/config", methods=["GET"])
     def api_get_config():
