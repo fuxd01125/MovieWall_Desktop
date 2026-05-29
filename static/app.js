@@ -8,7 +8,7 @@
 /* ===== MW Module Aliases ===== */
 const { escapeHtml, escapeJs, titleOf, tmdb, douban, seasonTmdb, seasonDouban, creditsCast, artworkUrl, backdropUrl, showToast, highlightText, renderDualRating } = MW.util;
 const { apiPutRating, apiDeleteRating, apiPutHistory, apiToggleFavorite, openFolder, recordPlay } = MW.api;
-const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, getFilteredItems, getFilteredSortedItems, getContinueItems, normalizeCategoriesConfig, fetchAllData, setSort, getSortLabel, SORT_MODES } = MW.state;
+const { findItem, isFavorite, getUserRating, getItemHistory, getLastHistory, getFilteredItems, getFilteredSortedItems, getContinueItems, normalizeCategoriesConfig, fetchAllData, setSort, getSortLabel, SORT_MODES, getAllGenres, hasActiveFilters, clearFilters } = MW.state;
 const { pickHeroItem, renderHero, renderRowSection, renderCardOverlay, renderHomeCard, renderContinueCard, showSkeleton } = MW.cards;
 const { renderGenreTags, renderPrimaryMeta, renderDoubanTags, detailHero, findFirstEpisode, renderSeasonCard, renderInlineEpisodes, renderSeasonDoubanTags, episodeEntry, renderEpisodeCard } = MW.detail;
 const { renderCastSection, renderPersonDetail } = MW.person;
@@ -110,7 +110,7 @@ function renderCategoryTabs() {
     + '<button class="sort-btn cat-tab' + (sortActive ? ' sort-active' : '') + '" onclick="event.stopPropagation();toggleSortMenu()">↕ ' + escapeHtml(sortLabel) + '</button>'
     + (MW.state.sortMenuOpen ? renderSortDropdown() : '')
     + '</div>';
-  catTabs.innerHTML = tabsHtml + sortBtn;
+  catTabs.innerHTML = tabsHtml + renderFilterBar() + sortBtn;
 }
 
 function renderSortDropdown() {
@@ -139,6 +139,99 @@ function setTab(key) {
   MW.state.activeTab = key;
   MW.state.navStack = [];
   renderHome();
+}
+
+/* ===== Filter Bar ===== */
+
+function renderFilterBar() {
+  var f = MW.state.activeFilters;
+  var hasFilters = hasActiveFilters();
+  var btn = '<button class="filter-btn cat-tab' + (hasFilters ? ' filter-active' : '') + '" onclick="event.stopPropagation();toggleFilterPanel()">筛选' + (hasFilters ? ' ●' : '') + '</button>';
+  var panel = MW.state.filterPanelOpen ? renderFilterPanel() : '';
+  var tags = hasFilters ? renderFilterTags() : '';
+  return '<div class="filter-wrap">' + btn + panel + '</div>' + tags;
+}
+
+function renderFilterPanel() {
+  var f = MW.state.activeFilters;
+  // Type
+  var typeHtml = '<div class="fp-section"><div class="fp-label">类型</div><div class="fp-row">'
+    + filterChip("movie", "电影", f.types.includes("movie"))
+    + filterChip("show", "剧集", f.types.includes("show"))
+    + '</div></div>';
+  // Year
+  var yearHtml = '<div class="fp-section"><div class="fp-label">年份</div><div class="fp-row fp-range">'
+    + '<input type="number" class="fp-input" placeholder="起始" value="' + (f.yearMin || '') + '" onchange="setFilter(\'yearMin\',this.value)">'
+    + '<span class="fp-sep">~</span>'
+    + '<input type="number" class="fp-input" placeholder="结束" value="' + (f.yearMax || '') + '" onchange="setFilter(\'yearMax\',this.value)">'
+    + '</div></div>';
+  // Rating
+  var ratingHtml = '<div class="fp-section"><div class="fp-label">最低评分</div><div class="fp-row fp-range">'
+    + '<input type="number" class="fp-input fp-input-sm" placeholder="0" min="0" max="10" step="0.5" value="' + (f.ratingMin || '') + '" onchange="setFilter(\'ratingMin\',this.value)">'
+    + '<select class="fp-select" onchange="setFilter(\'ratingSource\',this.value)">'
+    + '<option value="tmdb"' + (f.ratingSource === 'tmdb' ? ' selected' : '') + '>TMDB</option>'
+    + '<option value="douban"' + (f.ratingSource === 'douban' ? ' selected' : '') + '>豆瓣</option>'
+    + '</select>'
+    + '</div></div>';
+  // Genres
+  var allGenres = getAllGenres();
+  var genreHtml = '';
+  if (allGenres.length > 0) {
+    var chips = allGenres.map(function(g) {
+      return filterChip(g, g, f.genres.includes(g));
+    }).join('');
+    genreHtml = '<div class="fp-section"><div class="fp-label">类型标签</div><div class="fp-row fp-genres">' + chips + '</div></div>';
+  }
+  // Actions
+  var actionsHtml = '<div class="fp-actions"><button class="ghost" onclick="event.stopPropagation();clearFiltersAndRender()">清除筛选</button></div>';
+  return '<div class="filter-panel" onclick="event.stopPropagation()">' + typeHtml + yearHtml + ratingHtml + genreHtml + actionsHtml + '</div>';
+}
+
+function filterChip(value, label, active) {
+  return '<button class="fp-chip' + (active ? ' active' : '') + '" onclick="event.stopPropagation();toggleFilterValue(\'' + escapeJs(value) + '\')">' + escapeHtml(label) + '</button>';
+}
+
+function renderFilterTags() {
+  var f = MW.state.activeFilters;
+  var tags = '';
+  f.types.forEach(function(t) {
+    tags += '<span class="filter-tag">' + (t === 'movie' ? '电影' : '剧集') + ' <span onclick="toggleFilterValue(\'' + t + '\')">✕</span></span>';
+  });
+  if (f.yearMin) tags += '<span class="filter-tag">' + f.yearMin + '年后 <span onclick="setFilter(\'yearMin\',\'\')">✕</span></span>';
+  if (f.yearMax) tags += '<span class="filter-tag">' + f.yearMax + '年前 <span onclick="setFilter(\'yearMax\',\'\')">✕</span></span>';
+  if (f.ratingMin) tags += '<span class="filter-tag">' + (f.ratingSource === 'douban' ? '豆瓣' : 'TMDB') + '≥' + f.ratingMin + ' <span onclick="setFilter(\'ratingMin\',\'\')">✕</span></span>';
+  f.genres.forEach(function(g) {
+    tags += '<span class="filter-tag">' + escapeHtml(g) + ' <span onclick="toggleFilterValue(\'' + escapeJs(g) + '\')">✕</span></span>';
+  });
+  return '<div class="filter-tags">' + tags + '</div>';
+}
+
+function toggleFilterPanel() {
+  MW.state.filterPanelOpen = !MW.state.filterPanelOpen;
+  renderRoute(MW.state.currentView);
+}
+
+function toggleFilterValue(value) {
+  var f = MW.state.activeFilters;
+  if (value === 'movie' || value === 'show') {
+    var idx = f.types.indexOf(value);
+    if (idx >= 0) f.types.splice(idx, 1); else f.types.push(value);
+  } else {
+    var idx2 = f.genres.indexOf(value);
+    if (idx2 >= 0) f.genres.splice(idx2, 1); else f.genres.push(value);
+  }
+  renderRoute(MW.state.currentView);
+}
+
+function setFilter(key, value) {
+  if (value === '' || value === null) value = null;
+  MW.state.activeFilters[key] = value;
+  renderRoute(MW.state.currentView);
+}
+
+function clearFiltersAndRender() {
+  clearFilters();
+  renderRoute(MW.state.currentView);
 }
 
 /* ===== Star Rating (user input) ===== */
@@ -711,6 +804,10 @@ document.addEventListener("click", (e) => {
   }
   if (MW.state.sortMenuOpen && !e.target.closest(".sort-wrap")) {
     MW.state.sortMenuOpen = false;
+    renderRoute(MW.state.currentView);
+  }
+  if (MW.state.filterPanelOpen && !e.target.closest(".filter-wrap")) {
+    MW.state.filterPanelOpen = false;
     renderRoute(MW.state.currentView);
   }
 });
