@@ -26,7 +26,7 @@ window.MW = window.MW || {};
     var d = util.douban(item);
     var backdropRaw = t.backdrop_url || util.artworkUrl(item, "thumb") || t.poster_url || util.artworkUrl(item, "poster");
     var posterRaw = util.artworkUrl(item, "poster") || t.poster_url;
-    var heroRating = d.rating || t.rating || "";
+    var heroRating = t.rating || d.rating || "";
     var genres = (t.genres || []).slice(0, 3);
     var isShow = item.type === "show";
     var firstEp = isShow ? MW.detail.findFirstEpisode(item) : null;
@@ -108,7 +108,7 @@ window.MW = window.MW || {};
     var fav = state.isFavorite(item.id);
     var t = util.tmdb(item);
     var d = util.douban(item);
-    var score = d.rating || t.rating || "";
+    var score = t.rating || d.rating || "";
     var epCount = item.type === "show" ? (item.episode_count || 0) : 0;
     var showCount = item.type === "show" && epCount > 0;
     var badges = (score ? '<div class="card-badge-score">★ ' + Number(score).toFixed(1) + '</div>' : '')
@@ -145,7 +145,7 @@ window.MW = window.MW || {};
     var histEntry = "{media_id:'" + item.id + "',type:'" + item.type + "',path:'" + util.escapeJs(hist.path) + "',title:'" + util.escapeJs(title) + "',show_title:'" + util.escapeJs(hist.show_title || title) + "',label:'" + util.escapeJs(epContext) + "',short_label:'" + util.escapeJs(epContext) + "'}";
     var t = util.tmdb(item);
     var d = util.douban(item);
-    var score = d.rating || t.rating || "";
+    var score = t.rating || d.rating || "";
     return '<article class="card continue-card" onclick="openDetail(\'' + item.id + '\')">'
       + '<div class="card-poster">'
       + (score ? '<div class="card-badge-score">★ ' + Number(score).toFixed(1) + '</div>' : '')

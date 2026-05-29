@@ -130,6 +130,7 @@ body {
   background: transparent;
   border-radius: 0;
   min-width: fit-content;
+  flex: 1;
 }
 
 .cat-tab {
@@ -159,6 +160,73 @@ body {
 }
 
 .cat-tab:active { transform: scale(.95); }
+
+/* ----- Sort Button & Dropdown ----- */
+
+.sort-wrap {
+  position: relative;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.sort-btn {
+  gap: 4px;
+  font-size: 12px;
+  padding: 5px 12px;
+  color: var(--muted);
+}
+
+.sort-btn:hover {
+  color: var(--text-secondary);
+  background: rgba(255,255,255,.04);
+}
+
+.sort-btn.sort-active {
+  color: var(--accent);
+  background: rgba(245,197,24,.08);
+}
+
+.sort-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 6px;
+  min-width: 140px;
+  padding: 4px;
+  border-radius: var(--radius);
+  background: var(--surface-hover);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-lg);
+  z-index: 999;
+  animation: fadeUp .15s ease;
+}
+
+.sort-dropdown button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 13px;
+  border: 0;
+}
+
+.sort-dropdown button:hover {
+  background: rgba(255,255,255,.08);
+  color: var(--text);
+  transform: none;
+  box-shadow: none;
+}
+
+.sort-dropdown button.active {
+  color: var(--accent);
+  background: rgba(245,197,24,.1);
+  font-weight: 600;
+}
 
 /* ----- Breadcrumb ----- */
 
@@ -1822,6 +1890,14 @@ main {
   box-shadow: none;
 }
 
+.more-dropdown .danger-action {
+  color: var(--brand);
+}
+
+.more-dropdown .danger-action:hover {
+  background: rgba(229,9,20,.12);
+}
+
 /* =================================================================
    BACK BUTTON (detail page)
    ================================================================= */
@@ -1974,12 +2050,18 @@ main {
 .setting-control input[type="number"],
 .setting-control select {
   width: 240px;
+  min-width: 120px;
   padding: 7px 12px;
   font-size: 13px;
+  appearance: auto;
+  -webkit-appearance: auto;
+  background-image: none;
+  padding-right: 12px;
 }
 
-.setting-control select {
-  min-width: 120px;
+.setting-control select option {
+  background: var(--surface-elevated);
+  color: var(--text);
 }
 
 /* ── Toggle Switch ─────────────────────────────────────────────── */
